@@ -1,13 +1,8 @@
-// Usage:
-// Step 1: change managementApiUrl variable, replace with Management API URL from Outline Manager
-// Step 2: change domain variable with a domain if you connected one.
-// Step 3: go to terminal, run: npm install
-// Step 4: then run: node shadowboxKey.js
-
 // BEGIN Variables to change
 const managementApiUrl = 'https://xx.xx.xx.xxx:16942/k1CeXlhnXndHKlNTd3h-2w'; // Copy and paste Management API URL from Outline Manager Key Settings
 const domain = 'testdomain.com'; // set your custom domain if you have one
 // END Variables to change
+
 
 const fetch = require('node-fetch'); // if error run: npm install node-fetch --save
 const https = require("https");

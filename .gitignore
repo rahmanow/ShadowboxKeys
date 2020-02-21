@@ -1,2 +1,7 @@
 # Project exclude paths
 /node_modules/
+/.idea/misc.xml
+/.idea/modules.xml
+/.idea/OutlineKeyAPI.iml
+/.idea/vcs.xml
+/.idea/
