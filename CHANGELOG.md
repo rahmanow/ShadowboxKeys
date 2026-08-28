@@ -1,0 +1,88 @@
+# Changelog
+
+Notable changes to shadowtools. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
+[semantic versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [4.0.1] — 2026-08-28
+
+### Changed
+
+- Republished so the npm package page carries the current README. 4.0.0 was
+  published by hand before the npm badge and the release documentation were
+  written, and npm renders a package's page from the README inside the
+  published tarball. The shipped code is byte-identical to 4.0.0.
+
+This was also the first release published through the release workflow rather
+than by hand, and so the first with a signed provenance attestation.
+
+## [4.0.0] — 2026-08-28
+
+The first release published to npm, as `shadowtools`.
+
+### Changed
+
+- **Renamed from ShadowboxKeys to `shadowtools`** — the repository, the package,
+  the `shadowtools` command, and the entry point, which moved from
+  `shadowboxKey.js` to `shadowtools.js`. References to "Shadowbox" that name
+  Outline's own server component were deliberately left alone.
+
+### Added
+
+- A release workflow publishing on GitHub Release via npm trusted publishing
+  (OIDC), so no long-lived token exists in repository secrets or on a machine.
+  It refuses to publish when the release tag disagrees with `package.json`.
+- A `prepublishOnly` hook, so a failing test suite stops a publish.
+
+## Before 4.0.0
+
+These versions existed in the repository but were **never published to npm**.
+They are recorded because the version numbers appear in the git history.
+
+### 3.0.0 — a web interface, and outline-br absorbed
+
+- **Local web interface** (`shadowtools ui`) covering every command, with no new
+  dependencies: the page is inlined, and QR codes reuse the terminal renderer's
+  block output. The Management API URL never reaches the browser — the local
+  server holds it and proxies, bound to loopback, gated on a per-run token, and
+  refusing requests whose `Host` header is not the loopback address, which is
+  what stops DNS rebinding.
+- **Absorbed [outline-br](https://github.com/rahmanow/outline-br)**, which is now
+  deprecated. Its `getKeys()` is exported here with the same signature, output
+  format and printing behaviour, so migrating changes only the import.
+- **Programmatic API**: `listKeys()`, `getUsage()` and `OutlineClient` alongside
+  the CLI.
+- MIT licence and a code of conduct, carried over from outline-br.
+- Fixed certificate pinning on any command issuing more than one request. TLS
+  session resumption skipped the certificate exchange, so the check saw no
+  certificate and rejected the legitimate server. Found by the integration tests
+  added in the same change, before the code was ever published.
+
+### 2.0.0 — from a script to a tool
+
+- Commands for creating, renaming and deleting keys, per-key and server-wide
+  data limits, usage reporting, and QR codes, with JSON and CSV output.
+- **Optional TLS certificate pinning** via `OUTLINE_CERT_SHA256`, aborting
+  before any request bytes are written if the server presents an unexpected
+  certificate — which matters because the path in the Management API URL is
+  itself the admin credential.
+- Replaced `node-fetch` with the built-in `node:https`, leaving
+  `qrcode-terminal` as the only runtime dependency.
+- Continuous integration on Node 18, 20 and 22, plus a dependency audit, and a
+  test suite covering the pure logic and the HTTP layer.
+
+### 1.1.0 — configuration and documentation
+
+- Configuration moved to environment variables (`OUTLINE_API_URL`,
+  `OUTLINE_DOMAIN`), so the Management API URL need not live in a tracked file.
+- A real README, and `node-fetch` updated to 2.7.0 to clear two advisories.
+
+### 1.0.0 — 2020-02-21
+
+- The original script: list access keys, rewriting the server IP to a custom
+  domain.
+
+[Unreleased]: https://github.com/rahmanow/shadowtools/compare/v4.0.1...HEAD
+[4.0.1]: https://github.com/rahmanow/shadowtools/releases/tag/v4.0.1
