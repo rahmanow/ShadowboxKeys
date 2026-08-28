@@ -5,6 +5,8 @@ const assert = require('node:assert');
 const http = require('node:http');
 
 const { createHandler, hostIsLoopback, toBytes } = require('../lib/server');
+const { createRegistry } = require('../lib/registry');
+const { createMemoryStore } = require('../lib/config');
 const { UserError } = require('../lib/errors');
 
 const GB = 1024 ** 3;
@@ -129,7 +131,7 @@ test('web interface', async t => {
             const res = await call('GET', '/', { token: null });
             assert.strictEqual(res.status, 200);
             assert.match(res.headers['content-type'], /text\/html/);
-            assert.match(res.text, /<title>Outline access keys<\/title>/);
+            assert.match(res.text, /<title>shadowtools<\/title>/);
         });
 
         await t.test('the page policy allows its own fetch calls', async () => {
@@ -259,6 +261,196 @@ test('the interface falls back to the server hostname when no domain is set', as
         const res = await request(port, 'GET', '/api/state');
         assert.strictEqual(res.json.host, '10.0.0.1');
         assert.strictEqual(res.json.keys[0].accessUrl, 'ss://a@10.0.0.1:443/?outline=1');
+    } finally {
+        server.close();
+    }
+});
+
+/* --------------------------------------------------------------------------
+ * Server management, which is what turned the key list into a dashboard.
+ * ------------------------------------------------------------------------ */
+
+const API_A = 'https://1.2.3.4:16942/AaAaAaAaAa';
+const API_B = 'https://5.6.7.8:16942/BbBbBbBbBb';
+
+/** Starts the handler over a registry whose clients are the fake above. */
+async function startDashboard({ env = null, clients = {} } = {}) {
+    const registry = createRegistry({
+        store: createMemoryStore(),
+        env,
+        clientFactory: server => {
+            const host = new URL(server.apiUrl).hostname;
+            if (clients[host]) return clients[host];
+            // A server nobody stubbed stands in for one that cannot be reached.
+            const fail = () => Promise.reject(new UserError('Could not reach the Outline server: timeout'));
+            return {
+                hostname: host,
+                listKeys: fail, getTransferMetrics: fail, getServerInfo: fail,
+            };
+        },
+    });
+
+    let handler;
+    const server = http.createServer((req, res) => {
+        handler(req, res).catch(() => { res.writeHead(500); res.end(); });
+    });
+    await new Promise(r => server.listen(0, '127.0.0.1', r));
+    const port = server.address().port;
+    handler = createHandler({ registry, token: TOKEN, port });
+    return { server, port, registry };
+}
+
+test('the dashboard manages servers', async t => {
+    const client = fakeClient();
+    const { server, port } = await startDashboard({ clients: { '1.2.3.4': client } });
+    const call = (method, path, opts) => request(port, method, path, opts);
+    let addedId;
+
+    try {
+        await t.test('state before any server is configured is empty, not an error', async () => {
+            const res = await call('GET', '/api/state');
+            assert.strictEqual(res.status, 200);
+            assert.deepStrictEqual(res.json.servers, []);
+            assert.strictEqual(res.json.activeServerId, null);
+            assert.strictEqual(res.json.reachable, false);
+            assert.deepStrictEqual(res.json.keys, []);
+        });
+
+        await t.test('a server added by access code becomes active immediately', async () => {
+            const res = await call('POST', '/api/servers', {
+                body: { name: 'Frankfurt', accessCode: API_A, domain: 'vpn.example.com' },
+            });
+            assert.strictEqual(res.status, 200);
+            assert.strictEqual(res.json.servers.length, 1);
+
+            const [added] = res.json.servers;
+            addedId = added.id;
+            assert.strictEqual(added.active, true);
+            assert.strictEqual(res.json.reachable, true);
+            assert.strictEqual(res.json.host, 'vpn.example.com');
+            assert.strictEqual(res.json.keys.length, 2);
+        });
+
+        await t.test('state never carries a server credential to the browser', async () => {
+            const res = await call('GET', '/api/state');
+            assert.ok(!res.text.includes('AaAaAaAaAa'), 'the access code leaked into state');
+        });
+
+        await t.test('the access code is served only by the endpoint that exists for it', async () => {
+            const res = await call('GET', '/api/servers/' + addedId + '/access-code');
+            assert.strictEqual(res.status, 200);
+            assert.strictEqual(res.json.apiUrl, API_A);
+        });
+
+        await t.test('a rejected access code is a clear 400 and changes nothing', async () => {
+            const res = await call('POST', '/api/servers', { body: { name: 'Bad', accessCode: 'nonsense' } });
+            assert.strictEqual(res.status, 400);
+            assert.match(res.json.error, /not a Management API URL/);
+            assert.strictEqual((await call('GET', '/api/state')).json.servers.length, 1);
+        });
+
+        await t.test('editing a server updates the host used in access URLs', async () => {
+            const res = await call('PUT', '/api/servers/' + addedId, { body: { domain: '' } });
+            assert.strictEqual(res.status, 200);
+            assert.strictEqual(res.json.host, '1.2.3.4');
+            assert.strictEqual(res.json.keys[0].accessUrl, 'ss://a@1.2.3.4:443/?outline=1');
+        });
+
+        await t.test('an unreachable server reports why instead of blanking the page', async () => {
+            // Nothing stubs 5.6.7.8, so every Management API call fails.
+            const res = await call('POST', '/api/servers', { body: { name: 'Broken', accessCode: API_B } });
+            assert.strictEqual(res.status, 200);
+            assert.strictEqual(res.json.reachable, false);
+            assert.match(res.json.unreachableReason, /Could not reach the Outline server/);
+            assert.strictEqual(res.json.servers.length, 2, 'the servers list must survive the failure');
+        });
+
+        await t.test('switching back to a working server restores the keys', async () => {
+            const res = await call('POST', '/api/servers/' + addedId + '/activate');
+            assert.strictEqual(res.json.activeServerId, addedId);
+            assert.strictEqual(res.json.reachable, true);
+            assert.strictEqual(res.json.keys.length, 2);
+        });
+
+        await t.test('a key operation lands on the active server', async () => {
+            const before = client.calls.length;
+            await call('POST', '/api/keys', { body: { name: 'Dave' } });
+            assert.deepStrictEqual(client.calls.at(-1), ['create', 'Dave']);
+            assert.ok(client.calls.length > before);
+        });
+
+        await t.test('testing a server checks it without switching to it', async () => {
+            const servers = (await call('GET', '/api/state')).json.servers;
+            const broken = servers.find(entry => entry.name === 'Broken');
+
+            const res = await call('POST', '/api/servers/' + broken.id + '/test');
+            assert.strictEqual(res.status, 400);
+            assert.match(res.json.error, /Could not reach/);
+
+            const ok = await call('POST', '/api/servers/' + addedId + '/test');
+            assert.strictEqual(ok.status, 200);
+            assert.strictEqual(ok.json.name, 'Test');
+            assert.strictEqual((await call('GET', '/api/state')).json.activeServerId, addedId);
+        });
+
+        await t.test('removing a server leaves the remaining one active', async () => {
+            const servers = (await call('GET', '/api/state')).json.servers;
+            const broken = servers.find(entry => entry.name === 'Broken');
+
+            const res = await call('DELETE', '/api/servers/' + broken.id);
+            assert.strictEqual(res.status, 200);
+            assert.strictEqual(res.json.servers.length, 1);
+            assert.strictEqual(res.json.activeServerId, addedId);
+        });
+
+        await t.test('an unknown server id is a 400, not a crash', async () => {
+            assert.strictEqual((await call('DELETE', '/api/servers/nope')).status, 400);
+            assert.strictEqual((await call('POST', '/api/servers/nope/activate')).status, 400);
+            assert.strictEqual((await call('GET', '/api/servers/nope/access-code')).status, 400);
+        });
+
+        await t.test('server routes still need the token and a loopback Host', async () => {
+            assert.strictEqual((await call('GET', '/api/state', { token: null })).status, 401);
+            assert.strictEqual(
+                (await call('POST', '/api/servers', { host: 'evil.example.com', body: {} })).status, 403);
+        });
+    } finally {
+        server.close();
+    }
+});
+
+test('a server from the environment is offered but cannot be rewritten', async () => {
+    const client = fakeClient();
+    const { server, port } = await startDashboard({
+        env: { apiUrl: API_A, domain: 'vpn.example.com' },
+        clients: { '1.2.3.4': client },
+    });
+
+    try {
+        const res = await request(port, 'GET', '/api/state');
+        assert.strictEqual(res.json.servers.length, 1);
+        assert.strictEqual(res.json.servers[0].source, 'env');
+        assert.strictEqual(res.json.servers[0].editable, false);
+        assert.strictEqual(res.json.host, 'vpn.example.com');
+
+        const edit = await request(port, 'PUT', '/api/servers/env', { body: { name: 'Renamed' } });
+        assert.strictEqual(edit.status, 400);
+        assert.match(edit.json.error, /environment/);
+    } finally {
+        server.close();
+    }
+});
+
+test('the QR endpoint returns a vector code as well as the terminal one', async () => {
+    const client = fakeClient();
+    const { server, port } = await startServer(client, 'vpn.example.com');
+    try {
+        const res = await request(port, 'GET', '/api/keys/0/qr');
+        assert.strictEqual(res.status, 200);
+        assert.ok(res.json.svgSize > 0, 'expected a module count');
+        assert.match(res.json.svgPath, /^M\d+ \d+h/);
+        // Nothing about the access URL may appear in the markup the page builds.
+        assert.ok(!res.json.svgPath.includes('vpn.example.com'));
     } finally {
         server.close();
     }

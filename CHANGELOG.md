@@ -6,6 +6,75 @@ Notable changes to shadowtools. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The web interface is now a multi-server admin dashboard.** It manages the
+  servers as well as the keys: paste a server's access code from Outline
+  Manager and it is saved for next time, so one panel covers every server you
+  run. Four sections — Overview, Access keys, Servers, Settings — with the
+  section in the URL hash so a reload lands where you were.
+- **Saved servers**, in `~/.config/shadowtools/config.json`, written `0600`
+  inside a `0700` directory and replaced by rename so an interrupted write
+  cannot truncate a file full of credentials. `SHADOWTOOLS_CONFIG` moves it.
+- **`servers` commands** — `servers`, `servers add`, `servers use`,
+  `servers remove` — and `--server` to point one command at a server without
+  changing the active one. Access codes are read from stdin, so they stay out
+  of shell history.
+- **`OUTLINE_TIMEOUT_MS`**, for the new Management API request timeout.
+- **The dashboard can run as a background service** — `service install` and
+  friends. It registers with the service manager the platform already has,
+  launchd on macOS and systemd's user instance on Linux, so it starts at login,
+  restarts if it exits, and answers on the same URL every time. Per-user
+  agents only: nothing runs as root, nothing installs system-wide, and no step
+  asks for a password.
+
+### Changed
+
+- `OUTLINE_API_URL` still takes precedence and now appears in the dashboard as
+  a read-only *environment* entry, so existing setups behave exactly as before.
+- The dashboard's QR codes are vector rather than block characters, so they
+  scan off a screen and survive a screenshot. No new dependency: the encoder
+  already vendored inside `qrcode-terminal` is reused, behind a guarded
+  require that falls back to the previous block output.
+- An unreachable server no longer blanks the page. Overview and Access keys
+  report it and point at Servers; Servers and Settings keep working, since
+  that is where the problem gets fixed.
+- **The dashboard URL is now stable.** The token is stored in
+  `~/.config/shadowtools/token` (mode `0600`) rather than minted per run, so a
+  bookmark survives a restart. `ui` and the background service read the same
+  file, so both hand out the same URL. `service url --rotate` mints a new one
+  and invalidates every link given out before it.
+
+### Fixed
+
+- **A short access-code secret was displayed in full.** The redaction that
+  shortens a Management API URL for display only truncated secrets longer than
+  its cap, so a shorter one passed through intact. It now keeps at most half.
+- **A Management API request had no timeout.** An address that drops packets
+  rather than refusing the connection — a wrong IP in a pasted access code, a
+  firewall — hung for the operating system's TCP timeout, well over a minute,
+  which in the dashboard looked like a frozen page. Requests now give up after
+  15 seconds and say which host did not answer.
+
+### Security
+
+- **The service never writes a credential into its own definition.** A launchd
+  plist and a systemd unit are ordinary files that other tooling reads and
+  backup software copies, so `OUTLINE_API_URL` and `OUTLINE_CERT_SHA256` are
+  deliberately not carried into one — only locations and tunables are.
+  `service install` says so when it sees them set, since a server configured
+  only that way will not appear in the background dashboard.
+- **The token is kept out of the service log.** launchd creates a log file
+  world-readable, and the dashboard prints its URL at startup, which would have
+  handed the token to any other user on the machine. The URL is now printed
+  only when stdout is a terminal; the log records that it is listening and
+  nothing more, and the log and its directory are created `0600`/`0700`.
+- Adding servers to the dashboard could have ended the guarantee that a
+  Management API URL never reaches the browser. It does not: the server list
+  the page receives carries redacted URLs, and the full access code is served
+  by a single endpoint that exists to reveal it, only when someone clicks the
+  button that asks for it.
+
 ## [4.0.1] — 2026-08-28
 
 ### Changed

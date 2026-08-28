@@ -160,3 +160,60 @@ test('programmatic API', { skip: hasOpenssl ? false : 'openssl is not available'
         fs.rmSync(credentials.dir, { recursive: true, force: true });
     }
 });
+
+test('a server that accepts the connection but never answers is given up on', async t => {
+    // Without a timeout this hangs for the operating system's TCP timeout —
+    // well over a minute — which in the dashboard looks like a frozen page.
+    const net = require('node:net');
+    const { OutlineClient, DEFAULT_REQUEST_TIMEOUT_MS } = require('../lib/outline');
+    const { UserError } = require('../lib/errors');
+
+    assert.strictEqual(DEFAULT_REQUEST_TIMEOUT_MS, 15000);
+
+    const silent = net.createServer(() => { /* accept, then say nothing */ });
+    await new Promise(resolve => silent.listen(0, '127.0.0.1', resolve));
+    const port = silent.address().port;
+
+    const previous = process.env.OUTLINE_TIMEOUT_MS;
+    process.env.OUTLINE_TIMEOUT_MS = '200';
+    t.after(() => {
+        if (previous === undefined) delete process.env.OUTLINE_TIMEOUT_MS;
+        else process.env.OUTLINE_TIMEOUT_MS = previous;
+        silent.close();
+    });
+
+    const started = Date.now();
+    await assert.rejects(
+        () => new OutlineClient(`https://127.0.0.1:${port}/secret`).listKeys(),
+        err => {
+            assert.ok(err instanceof UserError, 'a hung server is a user-facing problem, not a bug');
+            assert.match(err.message, /did not respond within/);
+            return true;
+        }
+    );
+
+    // Generous headroom for a slow machine; the point is that it is not minutes.
+    assert.ok(Date.now() - started < 5000, 'should give up promptly');
+});
+
+test('OUTLINE_TIMEOUT_MS is honoured, and nonsense falls back to the default', async t => {
+    const { requestTimeout, DEFAULT_REQUEST_TIMEOUT_MS } = require('../lib/outline');
+
+    const previous = process.env.OUTLINE_TIMEOUT_MS;
+    t.after(() => {
+        if (previous === undefined) delete process.env.OUTLINE_TIMEOUT_MS;
+        else process.env.OUTLINE_TIMEOUT_MS = previous;
+    });
+
+    delete process.env.OUTLINE_TIMEOUT_MS;
+    assert.strictEqual(requestTimeout(), DEFAULT_REQUEST_TIMEOUT_MS);
+
+    process.env.OUTLINE_TIMEOUT_MS = '2500';
+    assert.strictEqual(requestTimeout(), 2500);
+
+    // A bad value must not become "no timeout" or a timeout of zero.
+    for (const bad of ['', 'soon', '0', '-1', 'NaN']) {
+        process.env.OUTLINE_TIMEOUT_MS = bad;
+        assert.strictEqual(requestTimeout(), DEFAULT_REQUEST_TIMEOUT_MS, `for "${bad}"`);
+    }
+});
