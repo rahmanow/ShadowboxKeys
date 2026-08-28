@@ -32,7 +32,7 @@ jobs:
       # node --check only looks at its first argument, so check each file in turn.
       - name: Check syntax
         run: |
-          for file in index.js shadowboxKey.js lib/*.js test/*.js; do
+          for file in index.js shadowtools.js lib/*.js test/*.js; do
             node --check "$file"
           done
 
@@ -40,7 +40,7 @@ jobs:
         run: npm test
 
       - name: Check the CLI starts and prints help
-        run: node shadowboxKey.js --help
+        run: node shadowtools.js --help
 
       - name: Check the module exports load
         run: |

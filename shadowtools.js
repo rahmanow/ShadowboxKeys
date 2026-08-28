@@ -14,9 +14,9 @@ const { OutlineClient } = require('./lib/outline');
 const { UserError } = require('./lib/errors');
 const { formatBytes, parseBytes, rewriteAccessUrl, printTable, printCsv } = require('./lib/format');
 
-const USAGE = `ShadowboxKeys - manage access keys on your Outline VPN server
+const USAGE = `shadowtools - manage access keys on your Outline VPN server
 
-Usage: node shadowboxKey.js <command> [options]
+Usage: node shadowtools.js <command> [options]
 
 Commands:
   list                        List every access key with its access URL
@@ -49,11 +49,11 @@ Configuration (environment variables):
                        any server presenting a different certificate.
 
 Examples:
-  node shadowboxKey.js list --qr
-  node shadowboxKey.js add Alice --limit 50GB
-  node shadowboxKey.js limit Alice 10GB
-  node shadowboxKey.js usage --csv
-  node shadowboxKey.js ui --port 9000
+  node shadowtools.js list --qr
+  node shadowtools.js add Alice --limit 50GB
+  node shadowtools.js limit Alice 10GB
+  node shadowtools.js usage --csv
+  node shadowtools.js ui --port 9000
 `;
 
 /** Splits argv into positional arguments and a flag map. */
@@ -285,7 +285,7 @@ async function main() {
         return;
     }
 
-    // Listing is the historical default, so bare `node shadowboxKey.js` still works.
+    // Listing is the historical default, so bare `node shadowtools.js` still works.
     const command = commands[commandName || 'list'];
     if (!command) {
         throw new UserError(`Unknown command "${commandName}". Run with --help to see what is available.`);
@@ -294,7 +294,7 @@ async function main() {
     if (managementApiUrl.includes('xx.xx.xx.xxx')) {
         throw new UserError(
             'Please configure your Management API URL first.\n' +
-            'Set the OUTLINE_API_URL environment variable, or edit the managementApiUrl constant in shadowboxKey.js.'
+            'Set the OUTLINE_API_URL environment variable, or edit the managementApiUrl constant in shadowtools.js.'
         );
     }
 

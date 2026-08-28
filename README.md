@@ -1,6 +1,6 @@
-# ShadowboxKeys
+# shadowtools
 
-[![CI](https://github.com/rahmanow/ShadowboxKeys/actions/workflows/ci.yml/badge.svg)](https://github.com/rahmanow/ShadowboxKeys/actions/workflows/ci.yml)
+[![CI](https://github.com/rahmanow/shadowtools/actions/workflows/ci.yml/badge.svg)](https://github.com/rahmanow/shadowtools/actions/workflows/ci.yml)
 
 Manage access keys on your [Outline VPN](https://getoutline.org/) (Shadowbox) server, from the terminal, a local web interface, or your own code. It lists, creates, renames and deletes keys, sets per-key data limits, reports how much data each key has used, and prints scannable QR codes so people can onboard with the Outline app instead of copy-pasting `ss://` strings.
 
@@ -17,14 +17,14 @@ This project supersedes [outline-br](https://github.com/rahmanow/outline-br), wh
 ## Installation
 
 ```bash
-git clone https://github.com/rahmanow/ShadowboxKeys.git
-cd ShadowboxKeys
+git clone https://github.com/rahmanow/shadowtools.git
+cd shadowtools
 npm install
 ```
 
 ## Configuration
 
-Configure the tool either with environment variables (recommended — keeps secrets out of the code) or by editing the constants at the top of `shadowboxKey.js`.
+Configure the tool either with environment variables (recommended — keeps secrets out of the code) or by editing the constants at the top of `shadowtools.js`.
 
 | Setting | Environment variable | Description |
 | --- | --- | --- |
@@ -56,7 +56,7 @@ source .env
 ## Commands
 
 ```
-node shadowboxKey.js <command> [options]
+node shadowtools.js <command> [options]
 ```
 
 | Command | What it does |
@@ -89,7 +89,7 @@ Sizes accept a unit suffix: `10GB`, `500MB`, `2TB`, or a plain byte count.
 List every key:
 
 ```console
-$ node shadowboxKey.js list
+$ node shadowtools.js list
 ID  NAME   LIMIT  ACCESS URL
 --  -----  -----  -----------------------------------------------------
 0   Alice  10 GB  ss://YWVzOnBhc3N3b3Jk@vpn.example.com:443/?outline=1
@@ -99,7 +99,7 @@ ID  NAME   LIMIT  ACCESS URL
 Create a key with a 50 GB cap and show its QR code:
 
 ```console
-$ node shadowboxKey.js add Carol --limit 50GB --qr
+$ node shadowtools.js add Carol --limit 50GB --qr
 Created key "Carol" (id 2)
 Data limit: 50 GB
 ss://bmV3a2V5@vpn.example.com:502/?outline=1
@@ -113,7 +113,7 @@ Carol:
 See who is using how much:
 
 ```console
-$ node shadowboxKey.js usage
+$ node shadowtools.js usage
 ID  NAME   USED    LIMIT  OF LIMIT
 --  -----  ------  -----  --------
 0   Alice  3.0 GB  10 GB  30%
@@ -125,14 +125,14 @@ Total transferred: 3.5 GB
 Cap a heavy user, then lift the cap later:
 
 ```bash
-node shadowboxKey.js limit Alice 10GB
-node shadowboxKey.js limit Alice none
+node shadowtools.js limit Alice 10GB
+node shadowtools.js limit Alice none
 ```
 
 Export usage for a spreadsheet:
 
 ```bash
-node shadowboxKey.js usage --csv > usage.csv
+node shadowtools.js usage --csv > usage.csv
 ```
 
 ## Web interface
@@ -140,7 +140,7 @@ node shadowboxKey.js usage --csv > usage.csv
 If you would rather click than type:
 
 ```bash
-node shadowboxKey.js ui
+node shadowtools.js ui
 ```
 
 It prints a URL to open:
@@ -186,7 +186,7 @@ port.
 Everything the CLI does is available as a module. `require` the package and you get three helpers plus the underlying client:
 
 ```js
-const { listKeys, getUsage, getKeys, OutlineClient } = require('shadowbox-keys');
+const { listKeys, getUsage, getKeys, OutlineClient } = require('shadowtools');
 
 const API = 'https://1.2.3.4:16942/AbCdEf123';
 const options = { domain: 'vpn.example.com', certSha256: 'E3823F9B...52F5A584' };
@@ -221,7 +221,7 @@ await client.clearServerDataLimit();
 Failures caused by bad input or a bad response throw `UserError`, which is also exported, so you can tell them apart from bugs:
 
 ```js
-const { UserError } = require('shadowbox-keys');
+const { UserError } = require('shadowtools');
 
 try {
     await listKeys(API, { certSha256: expected });
@@ -241,7 +241,7 @@ const keys = require('outline-br');
 keys('https://1.2.3.4:16942/AbCdEf123', '87.65.43.21');
 
 // after
-const { getKeys } = require('shadowbox-keys');
+const { getKeys } = require('shadowtools');
 await getKeys('https://1.2.3.4:16942/AbCdEf123', '87.65.43.21');
 ```
 
@@ -253,7 +253,7 @@ New code should prefer `listKeys()`, which returns structured data and leaves pr
 
 ```
 index.js           Programmatic API: listKeys, getUsage, getKeys
-shadowboxKey.js    CLI entry point: argument parsing and commands
+shadowtools.js     CLI entry point: argument parsing and commands
 lib/outline.js     Outline Management API client
 lib/format.js      Byte formatting, size parsing, table/CSV output
 lib/errors.js      UserError, for messages shown without a stack trace
@@ -281,7 +281,7 @@ Outline servers use a self-signed TLS certificate for the Management API, so the
 Setting `OUTLINE_CERT_SHA256` closes that gap. The tool then checks the certificate the server presents against the fingerprint you configured, and **aborts before sending anything** if they differ:
 
 ```console
-$ OUTLINE_CERT_SHA256=aaaa...aaaa node shadowboxKey.js list
+$ OUTLINE_CERT_SHA256=aaaa...aaaa node shadowtools.js list
 The server presented an unexpected TLS certificate, so the request was not sent.
   expected: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   received: e3823f9bb490d35487ee013ec7d23a3662f76b95eb01a40f4851905152f5a584
@@ -303,7 +303,7 @@ The HTTP calls use the built-in `node:https` module because the global `fetch()`
 
 ## Troubleshooting
 
-- **`Please configure your Management API URL first`** — set `OUTLINE_API_URL`, or replace the placeholder in `shadowboxKey.js`.
+- **`Please configure your Management API URL first`** — set `OUTLINE_API_URL`, or replace the placeholder in `shadowtools.js`.
 - **`Could not reach the Outline server`** — check that the Management API URL is correct and that its port (usually `16942`) is reachable from your machine.
 - **`Cannot find module 'qrcode-terminal'`** — run `npm install` in the project directory first.
 - **`The server presented an unexpected TLS certificate`** — either `OUTLINE_CERT_SHA256` is stale (recopy `certSha256` from Outline Manager after rebuilding or migrating the server), or something other than your Outline server answered. See [certificate pinning](#certificate-pinning).
