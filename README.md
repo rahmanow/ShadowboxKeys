@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/rahmanow/ShadowboxKeys/actions/workflows/ci.yml/badge.svg)](https://github.com/rahmanow/ShadowboxKeys/actions/workflows/ci.yml)
 
-Manage access keys on your [Outline VPN](https://getoutline.org/) (Shadowbox) server, from the terminal or from your own code. It lists, creates, renames and deletes keys, sets per-key data limits, reports how much data each key has used, and prints scannable QR codes so people can onboard with the Outline app instead of copy-pasting `ss://` strings.
+Manage access keys on your [Outline VPN](https://getoutline.org/) (Shadowbox) server, from the terminal, a local web interface, or your own code. It lists, creates, renames and deletes keys, sets per-key data limits, reports how much data each key has used, and prints scannable QR codes so people can onboard with the Outline app instead of copy-pasting `ss://` strings.
 
 It can also rewrite every access URL to use your own domain in place of the server's raw IP address — handy when you have pointed a domain at your Outline server, or when your provider's IP has been blocked and you have restored the server elsewhere.
 
@@ -69,6 +69,7 @@ node shadowboxKey.js <command> [options]
 | `limit server <size\|none>` | Set or clear the server-wide default data limit |
 | `usage` | Show how much data each key has transferred |
 | `qr <key>` | Print a key's access URL as a scannable QR code |
+| `ui` | Open a local web interface covering all of the above |
 
 `<key>` may be either a key id or a key name. Running with no command at all is the same as `list`, so the original behaviour still works.
 
@@ -78,6 +79,7 @@ node shadowboxKey.js <command> [options]
 | `--json` | `list`, `usage` | Output JSON instead of a table |
 | `--csv` | `list`, `usage` | Output CSV instead of a table |
 | `--limit <size>` | `add` | Give the new key a data limit straight away |
+| `--port <n>` | `ui` | Port for the web interface (default 8787) |
 | `-h`, `--help` | — | Show usage |
 
 Sizes accept a unit suffix: `10GB`, `500MB`, `2TB`, or a plain byte count.
@@ -132,6 +134,52 @@ Export usage for a spreadsheet:
 ```bash
 node shadowboxKey.js usage --csv > usage.csv
 ```
+
+## Web interface
+
+If you would rather click than type:
+
+```bash
+node shadowboxKey.js ui
+```
+
+It prints a URL to open:
+
+```
+Web interface running. Open this URL:
+
+  http://127.0.0.1:8787/?t=979ea2e12d7c5ba8e1d38631b2effd32583bca3b035775f3
+
+It listens on localhost only, and the token in the URL authorises it.
+Press Ctrl+C to stop.
+```
+
+The page lists every key with its usage, limit and access URL, and lets you add,
+rename, delete, cap and show a QR code for any of them, plus set the server-wide
+default cap. It follows your system light or dark theme. Use `--port` to move it
+off 8787.
+
+### How it is secured
+
+The Management API URL is full administrative control of your Outline server, so
+the interface is deliberately narrow:
+
+- **It never leaves the process.** The browser talks only to this local server,
+  which holds the credential and proxies each call. Nothing sensitive is sent to
+  the page.
+- **Loopback only.** It binds `127.0.0.1`, so nothing else on your network can
+  reach it — not a shared-hosting concern, a deliberate limit.
+- **Token-gated.** A random token is minted at each start and carried in the
+  printed URL. Every API call must present it in a header, so another page open
+  in the same browser cannot drive it, and requiring a custom header means a
+  cross-origin attempt hits a CORS preflight that is never answered.
+- **Host-checked.** Requests whose `Host` header is not the loopback address are
+  refused, which is what stops DNS rebinding from turning an attacker's domain
+  into a route to your machine.
+
+The token changes every run, so old URLs stop working once you restart it. This
+is a single-user local tool: do not put it behind a reverse proxy or expose the
+port.
 
 ## Using it from code
 
@@ -209,6 +257,8 @@ shadowboxKey.js    CLI entry point: argument parsing and commands
 lib/outline.js     Outline Management API client
 lib/format.js      Byte formatting, size parsing, table/CSV output
 lib/errors.js      UserError, for messages shown without a stack trace
+lib/server.js      Local web interface: HTTP routes and their guards
+lib/web.js         The interface's page, inlined so it needs no assets
 test/              Tests, run with the built-in Node test runner
 ```
 
@@ -258,6 +308,8 @@ The HTTP calls use the built-in `node:https` module because the global `fetch()`
 - **`Cannot find module 'qrcode-terminal'`** — run `npm install` in the project directory first.
 - **`The server presented an unexpected TLS certificate`** — either `OUTLINE_CERT_SHA256` is stale (recopy `certSha256` from Outline Manager after rebuilding or migrating the server), or something other than your Outline server answered. See [certificate pinning](#certificate-pinning).
 - **`is not a SHA-256 certificate fingerprint`** — `OUTLINE_CERT_SHA256` must be 64 hex characters, with or without colons.
+- **`Port 8787 is already in use`** — something else has the port; pass `--port 9000` (or any free port).
+- **The web interface says the token is invalid** — it is regenerated on every start, so reopen the URL currently printed in your terminal.
 - **`Management API responded with 404`** — your Outline server may be running an older release that lacks data-limit or metrics endpoints. Upgrade the server, or stick to `list`, `add`, `remove` and `rename`.
 - **Keys print with the IP instead of your domain** — make sure `OUTLINE_DOMAIN` (or the `domain` constant) is set and non-empty.
 

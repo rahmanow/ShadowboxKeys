@@ -27,6 +27,7 @@ Commands:
                               the key to set the server-wide default limit)
   usage                       Show data transferred per key
   qr <key>                    Print an access key as a scannable QR code
+  ui                          Open a local web interface for all of the above
 
 <key> may be either a key id or a key name.
 
@@ -35,6 +36,7 @@ Options:
   --json      Output JSON instead of a table (list, usage)
   --csv       Output CSV instead of a table (list, usage)
   --limit <size>  Data limit for a newly created key (add)
+  --port <n>  Port for the web interface (ui, default 8787)
   -h, --help  Show this help
 
 Sizes accept a unit suffix, e.g. 10GB, 500MB, 2TB.
@@ -51,6 +53,7 @@ Examples:
   node shadowboxKey.js add Alice --limit 50GB
   node shadowboxKey.js limit Alice 10GB
   node shadowboxKey.js usage --csv
+  node shadowboxKey.js ui --port 9000
 `;
 
 /** Splits argv into positional arguments and a flag map. */
@@ -63,6 +66,8 @@ function parseArgs(argv) {
             flags.help = true;
         } else if (arg === '--limit') {
             flags.limit = argv[++i];
+        } else if (arg === '--port') {
+            flags.port = argv[++i];
         } else if (arg.startsWith('--')) {
             flags[arg.slice(2)] = true;
         } else {
@@ -230,6 +235,38 @@ const commands = {
             const total = rows.reduce((sum, row) => sum + row.bytes, 0);
             console.log(`\nTotal transferred: ${formatBytes(total)}`);
         }
+    },
+
+    async ui(client, host, args, flags) {
+        const { start } = require('./lib/server');
+
+        const port = flags.port === undefined ? 8787 : Number(flags.port);
+        if (!Number.isInteger(port) || port < 0 || port > 65535) {
+            throw new UserError(`"${flags.port}" is not a valid port.`);
+        }
+
+        let started;
+        try {
+            started = await start({ client, domain: host, port });
+        } catch (err) {
+            if (err.code === 'EADDRINUSE') {
+                throw new UserError(`Port ${port} is already in use. Choose another with --port.`);
+            }
+            throw err;
+        }
+
+        console.log('Web interface running. Open this URL:');
+        console.log(`\n  ${started.url}\n`);
+        console.log('It listens on localhost only, and the token in the URL authorises it.');
+        console.log('Press Ctrl+C to stop.');
+
+        // Resolve only when the server closes, so the CLI stays alive serving it.
+        await new Promise(resolve => {
+            const stop = () => started.server.close(resolve);
+            process.once('SIGINT', stop);
+            process.once('SIGTERM', stop);
+            started.server.once('close', resolve);
+        });
     },
 
     async qr(client, host, args) {
