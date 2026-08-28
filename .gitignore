@@ -1,7 +1,14 @@
-# Project exclude paths
-/node_modules/
-/.idea/misc.xml
-/.idea/modules.xml
-/.idea/OutlineKeyAPI.iml
-/.idea/vcs.xml
-/.idea/
+# Dependencies
+node_modules/
+
+# IDE / editor files
+.idea/
+.vscode/
+*.iml
+
+# Environment files (never commit your Management API URL)
+.env
+.env.*
+
+# OS files
+.DS_Store

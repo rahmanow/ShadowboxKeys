@@ -1,29 +1,43 @@
 // BEGIN Variables to change
-const managementApiUrl = 'https://xx.xx.xx.xxx:16942/k1CeXlhnXndHKlNTd3h-2w'; // Copy and paste Management API URL from Outline Manager Key Settings
-const domain = 'testdomain.com'; // set your custom domain if you have one
+// Prefer setting these via environment variables (OUTLINE_API_URL, OUTLINE_DOMAIN)
+// so the Management API URL never ends up committed to version control.
+const managementApiUrl = process.env.OUTLINE_API_URL || 'https://xx.xx.xx.xxx:16942/xxxxxxxxxxxxxxxxxxxxxx'; // Management API URL from Outline Manager > Settings
+const domain = process.env.OUTLINE_DOMAIN || ''; // set your custom domain if you have one, e.g. 'vpn.example.com'
 // END Variables to change
 
 
-const fetch = require('node-fetch'); // if error run: npm install node-fetch --save
-const https = require("https");
+const fetch = require('node-fetch'); // if error run: npm install
+const https = require('https');
+
+// Outline's Management API uses a self-signed certificate, so verification
+// must be disabled for this request. Only point this at servers you control.
 const agent = new https.Agent({ rejectUnauthorized: false });
 
-const url = managementApiUrl + '/access-keys/';
-const ip = managementApiUrl.split('/')[2].split(':')[0];
-const dom = () => { return domain ? domain : ip };
+if (managementApiUrl.includes('xx.xx.xx.xxx')) {
+    console.error('Please configure your Management API URL first.');
+    console.error('Set the OUTLINE_API_URL environment variable, or edit the managementApiUrl constant in shadowboxKey.js.');
+    process.exit(1);
+}
+
+const url = managementApiUrl.replace(/\/$/, '') + '/access-keys/';
+const ip = new URL(managementApiUrl).hostname;
+const host = domain || ip;
 
 const getKeys = async () => {
-    const response = await fetch( url, {agent} );
-    const myJson = await response.json();
-    const keys = myJson.accessKeys;
-    for ( let i=0; i<keys.length; i++ ) {
-        let key = keys[i];
-        let port = ':' + key['port'];
-        let name = key['name'];
-        let accessUrl = key['accessUrl'];
-        console.log(name + '' + accessUrl.replace(ip + port + '/?outline=1', dom()+ port));
+    const response = await fetch(url, { agent });
+    if (!response.ok) {
+        throw new Error(`Management API responded with ${response.status} ${response.statusText}`);
+    }
+    const { accessKeys } = await response.json();
+    for (const key of accessKeys) {
+        const port = ':' + key.port;
+        console.log(key.name + '\t' + key.accessUrl.replace(ip + port + '/?outline=1', host + port));
     }
 };
+
 getKeys()
-    .then(r => console.log("Completed. These are all you have!"))
-    .catch(err => console.log(err));
+    .then(() => console.log('Completed. These are all you have!'))
+    .catch(err => {
+        console.error('Failed to fetch access keys:', err.message);
+        process.exit(1);
+    });

@@ -1,6 +1,25 @@
 {
-  "name": "OutlineKeyAPI",
-  "version": "1.0.0",
+  "name": "shadowbox-keys",
+  "version": "1.1.0",
+  "description": "List Outline VPN (Shadowbox) access keys and rewrite their access URLs to use a custom domain",
+  "main": "shadowboxKey.js",
+  "scripts": {
+    "start": "node shadowboxKey.js"
+  },
+  "keywords": [
+    "outline",
+    "outline-vpn",
+    "shadowbox",
+    "shadowsocks",
+    "access-keys"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rahmanow/ShadowboxKeys.git"
+  },
+  "engines": {
+    "node": ">=12"
+  },
   "dependencies": {
     "node-fetch": "^2.6.0"
   }
