@@ -274,6 +274,39 @@ The tests cover the pure logic — size parsing and formatting, access-URL rewri
 
 Every push and pull request runs the suite on Node 18, 20 and 22 via GitHub Actions, along with a syntax check and an audit of production dependencies. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
+## Releasing
+
+Releases publish from CI, so no npm token exists on anyone's machine or in
+repository secrets. Authentication uses npm
+[trusted publishing](https://docs.npmjs.com/trusted-publishers): GitHub Actions
+proves its identity to the registry over OIDC, and npm attests the package's
+provenance automatically.
+
+To ship a version:
+
+```bash
+npm version minor        # or patch / major - commits and tags
+git push --follow-tags
+```
+
+Then publish a GitHub Release for that tag. [`release.yml`](.github/workflows/release.yml)
+installs, verifies the tag matches `package.json`, runs the tests through the
+`prepublishOnly` hook, and publishes. A tag that disagrees with the version
+fails before anything reaches the registry, which matters because a published
+npm version can never be replaced.
+
+### One-time setup
+
+Trusted publishing has to be enabled on the registry side once, by a package
+maintainer:
+
+1. Open the package on npmjs.com, then **Settings → Trusted Publisher**.
+2. Choose GitHub Actions and enter the organization (`rahmanow`), the repository
+   (`shadowtools`), and the workflow filename (`release.yml`).
+
+Until that is configured, the workflow's publish step fails with an
+authentication error — which is the safe direction to fail in.
+
 ## Certificate pinning
 
 Outline servers use a self-signed TLS certificate for the Management API, so the usual chain validation cannot apply and the tool disables it (`rejectUnauthorized: false`). On its own that would leave the connection open to a man-in-the-middle: anything that can answer on the server's address would be trusted.

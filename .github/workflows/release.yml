@@ -1,0 +1,68 @@
+name: Release
+
+# Publishes to npm when a GitHub Release is published, so shipping a version is
+# "tag and release" rather than someone running npm publish from a laptop.
+#
+# Authentication uses npm trusted publishing (OIDC): GitHub Actions proves its
+# identity to the registry directly, so there is no long-lived token stored in
+# repository secrets or on anyone's machine. It requires a one-time setup on
+# npmjs.com — see "Releasing" in the README.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for OIDC. Without it the registry has nothing to verify.
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # Trusted publishing needs npm 11.5.1 or newer, which is more recent than
+      # the npm bundled with some Node versions. The printed version makes it
+      # obvious in the log if this ever regresses.
+      - name: Use an npm that supports trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      # A release tagged v1.2.3 must publish 1.2.3. Catching a mismatch here
+      # costs seconds; catching it afterwards is not possible, because a
+      # published npm version can never be replaced.
+      - name: Check the tag matches package.json
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "${TAG#v}" != "$version" ]; then
+            echo "::error::Release tag '$TAG' does not match package.json version '$version'."
+            echo "Bump the version and retag, or delete and recreate the release." >&2
+            exit 1
+          fi
+          echo "Publishing $version from tag $TAG."
+
+      # The tests run through the prepublishOnly hook, so a failing suite stops
+      # the publish. Trusted publishing attests provenance automatically, so no
+      # --provenance flag is needed.
+      - name: Publish
+        run: npm publish
