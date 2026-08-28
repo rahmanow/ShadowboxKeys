@@ -3,7 +3,9 @@
 [![CI](https://github.com/rahmanow/shadowtools/actions/workflows/ci.yml/badge.svg)](https://github.com/rahmanow/shadowtools/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/shadowtools.svg)](https://www.npmjs.com/package/shadowtools)
 
-Manage access keys on your [Outline VPN](https://getoutline.org/) (Shadowbox) server, from the terminal, a local web interface, or your own code. It lists, creates, renames and deletes keys, sets per-key data limits, reports how much data each key has used, and prints scannable QR codes so people can onboard with the Outline app instead of copy-pasting `ss://` strings.
+Manage access keys on your [Outline VPN](https://getoutline.org/) (Shadowbox) servers, from a local admin dashboard, the terminal, or your own code. It lists, creates, renames and deletes keys, sets per-key data limits, reports how much data each key has used, and shows scannable QR codes so people can onboard with the Outline app instead of copy-pasting `ss://` strings.
+
+The dashboard manages the servers too: paste the access code from Outline Manager and it is saved for next time, so one panel covers every server you run rather than one shell per server.
 
 It can also rewrite every access URL to use your own domain in place of the server's raw IP address — handy when you have pointed a domain at your Outline server, or when your provider's IP has been blocked and you have restored the server elsewhere.
 
@@ -12,8 +14,8 @@ This project supersedes [outline-br](https://github.com/rahmanow/outline-br), wh
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 14 or newer (with npm)
-- An Outline server set up via [Outline Manager](https://getoutline.org/get-started/)
-- Your server's **Management API URL** — in Outline Manager open your server, go to **Settings**, and copy the *Management API URL* (it looks like `https://1.2.3.4:16942/AbCdEf123...`)
+- One or more Outline servers set up via [Outline Manager](https://getoutline.org/get-started/)
+- Each server's **access code** — in Outline Manager open the server, go to **Settings**, and copy the line under *Management API URL*
 
 ## Installation
 
@@ -25,19 +27,39 @@ npm install
 
 ## Configuration
 
-Configure the tool either with environment variables (recommended — keeps secrets out of the code) or by editing the constants at the top of `shadowtools.js`.
-
-| Setting | Environment variable | Description |
-| --- | --- | --- |
-| Management API URL | `OUTLINE_API_URL` | The Management API URL copied from Outline Manager. **Required.** |
-| Certificate fingerprint | `OUTLINE_CERT_SHA256` | The server's `certSha256`. Optional but **recommended** — see [certificate pinning](#certificate-pinning). |
-| Custom domain | `OUTLINE_DOMAIN` | A domain that points at your Outline server. Optional — leave empty to keep the raw IP in the access URLs. |
-
-Outline Manager gives you the first two together. Under **Settings → Management API URL** it shows a line like:
+Everything starts from your server's **access code**. In Outline Manager, open your server and go to **Settings → Management API URL**; it shows a line like:
 
 ```json
 {"apiUrl":"https://1.2.3.4:16942/AbCdEf123","certSha256":"E3823F9BB490D354...52F5A584"}
 ```
+
+> ⚠️ That line grants full administrative control of your Outline server. Treat it like a password: don't commit it to version control or share it.
+
+There are two ways to give it to shadowtools, and they work together.
+
+### Add it in the dashboard (easiest, and handles several servers)
+
+```bash
+node shadowtools.js ui
+```
+
+Open the printed URL, go to **Servers → Add server**, and paste the access code. It is saved to a config file readable only by you, so the CLI picks it up too and you do not have to paste it again. Repeat for each server you run, and switch between them from the header.
+
+You can do the same from the terminal — the access code is read from stdin so it stays out of your shell history:
+
+```bash
+pbpaste | node shadowtools.js servers add Frankfurt
+```
+
+### Or set environment variables (one server, nothing on disk)
+
+| Setting | Environment variable | Description |
+| --- | --- | --- |
+| Management API URL | `OUTLINE_API_URL` | The `apiUrl` from the access code. |
+| Certificate fingerprint | `OUTLINE_CERT_SHA256` | The `certSha256` from the same line. Optional but **recommended** — see [certificate pinning](#certificate-pinning). |
+| Custom domain | `OUTLINE_DOMAIN` | A domain that points at your Outline server. Optional — leave empty to keep the raw IP in the access URLs. |
+| Config file location | `SHADOWTOOLS_CONFIG` | Override where saved servers are stored. Optional. |
+| Request timeout | `OUTLINE_TIMEOUT_MS` | How long to wait for a Management API response, in milliseconds. Optional, default 15000. |
 
 A convenient way to keep these out of your shell history is a `.env` file (already git-ignored) that you source before running:
 
@@ -52,7 +74,13 @@ export OUTLINE_DOMAIN="vpn.example.com"
 source .env
 ```
 
-> ⚠️ The Management API URL grants full administrative control of your Outline server. Treat it like a password: don't commit it to version control or share it.
+A server configured this way appears in the dashboard alongside your saved ones, marked **environment**. It is never written to the config file, and it cannot be edited or removed from the panel — change the variables instead. You can still make it the active server with one click.
+
+### Where saved servers live
+
+`$XDG_CONFIG_HOME/shadowtools/config.json`, or `~/.config/shadowtools/config.json` when that is unset. The file is written mode `0600` inside a `0700` directory, because it holds Management API URLs: anyone who can read it can administer every server listed in it. Point `SHADOWTOOLS_CONFIG` somewhere else if you prefer.
+
+The editing constants at the top of `shadowtools.js` still work, if you would rather not use either mechanism.
 
 ## Commands
 
@@ -70,17 +98,24 @@ node shadowtools.js <command> [options]
 | `limit server <size\|none>` | Set or clear the server-wide default data limit |
 | `usage` | Show how much data each key has transferred |
 | `qr <key>` | Print a key's access URL as a scannable QR code |
-| `ui` | Open a local web interface covering all of the above |
+| `servers` | List the Outline servers this machine knows about |
+| `servers add <name>` | Save a server, reading its access code from stdin |
+| `servers use <server>` | Choose the server other commands act on |
+| `servers remove <server>` | Forget a saved server (the server itself is untouched) |
+| `ui` | Open the admin dashboard, covering all of the above |
 
-`<key>` may be either a key id or a key name. Running with no command at all is the same as `list`, so the original behaviour still works.
+`<key>` may be either a key id or a key name, and `<server>` either a server id or a server name. Running with no command at all is the same as `list`, so the original behaviour still works.
+
+Key commands act on whichever server is active. Use `servers use` to change that, or `--server` to redirect a single command without changing it.
 
 | Option | Applies to | Effect |
 | --- | --- | --- |
 | `--qr` | `list`, `add` | Also print a QR code for each key |
-| `--json` | `list`, `usage` | Output JSON instead of a table |
-| `--csv` | `list`, `usage` | Output CSV instead of a table |
+| `--json` | `list`, `usage`, `servers` | Output JSON instead of a table |
+| `--csv` | `list`, `usage`, `servers` | Output CSV instead of a table |
 | `--limit <size>` | `add` | Give the new key a data limit straight away |
-| `--port <n>` | `ui` | Port for the web interface (default 8787) |
+| `--server <s>` | key commands | Act on this server instead of the active one |
+| `--port <n>` | `ui` | Port for the dashboard (default 8787) |
 | `-h`, `--help` | — | Show usage |
 
 Sizes accept a unit suffix: `10GB`, `500MB`, `2TB`, or a plain byte count.
@@ -136,7 +171,20 @@ Export usage for a spreadsheet:
 node shadowtools.js usage --csv > usage.csv
 ```
 
-## Web interface
+Work across servers:
+
+```console
+$ node shadowtools.js servers
+   ID            NAME       HOST          SOURCE  CERT PINNED
+-  ------------  ---------  ------------  ------  -----------
+*  7009f5d5ff9d  Frankfurt  198.51.100.7  saved   yes
+   d1cf000628fc  Singapore  203.0.113.4   saved   no
+
+$ node shadowtools.js list --server Singapore
+$ node shadowtools.js servers use Singapore
+```
+
+## Admin dashboard
 
 If you would rather click than type:
 
@@ -147,7 +195,7 @@ node shadowtools.js ui
 It prints a URL to open:
 
 ```
-Web interface running. Open this URL:
+Dashboard running. Open this URL:
 
   http://127.0.0.1:8787/?t=979ea2e12d7c5ba8e1d38631b2effd32583bca3b035775f3
 
@@ -155,19 +203,42 @@ It listens on localhost only, and the token in the URL authorises it.
 Press Ctrl+C to stop.
 ```
 
-The page lists every key with its usage, limit and access URL, and lets you add,
-rename, delete, cap and show a QR code for any of them, plus set the server-wide
-default cap. It follows your system light or dark theme. Use `--port` to move it
-off 8787.
+You can run it before configuring anything: with no servers yet, it opens on the
+Servers section so you can paste your first access code. Use `--port` to move it
+off 8787. It follows your system light or dark theme.
+
+Four sections, switched from the sidebar:
+
+| Section | What it covers |
+| --- | --- |
+| **Overview** | Key count, total transferred, the default cap, and which keys have hit their limit |
+| **Access keys** | Every key with its usage, limit and access URL — add, rename, cap, delete, copy, or show a QR code |
+| **Servers** | Add, edit, test, switch between and remove servers; reveal a server's access code to copy elsewhere |
+| **Settings** | The active server's domain and default data cap, and where saved servers are stored |
+
+The server picker in the header switches everything at once, with a dot showing
+whether that server is answering. When one is unreachable, Overview and Access
+keys say so and point you at Servers rather than showing a blank page — and
+Servers and Settings keep working, since that is where you go to fix it.
+
+### Installing Shadowbox on a new server
+
+Not yet — the Servers section marks where it lands. Today, provision a server
+with Outline Manager and paste its access code into the dashboard. The plan is
+to connect to a fresh host over SSH, run the Outline installer on it, and have
+the resulting access code register itself, with no round trip through Outline
+Manager.
 
 ### How it is secured
 
-The Management API URL is full administrative control of your Outline server, so
-the interface is deliberately narrow:
+A Management API URL is full administrative control of an Outline server, so the
+dashboard is deliberately narrow:
 
-- **It never leaves the process.** The browser talks only to this local server,
-  which holds the credential and proxies each call. Nothing sensitive is sent to
-  the page.
+- **Credentials never leave the process.** The browser talks only to this local
+  server, which holds them and proxies each call. The server list the page
+  receives carries redacted URLs — enough to tell two servers apart, not enough
+  to use. The full access code is served by one endpoint that exists for that
+  purpose, and only when you click the button that asks for it.
 - **Loopback only.** It binds `127.0.0.1`, so nothing else on your network can
   reach it — not a shared-hosting concern, a deliberate limit.
 - **Token-gated.** A random token is minted at each start and carried in the
@@ -256,10 +327,13 @@ New code should prefer `listKeys()`, which returns structured data and leaves pr
 index.js           Programmatic API: listKeys, getUsage, getKeys
 shadowtools.js     CLI entry point: argument parsing and commands
 lib/outline.js     Outline Management API client
+lib/config.js      Saved servers: access-code parsing and the on-disk store
+lib/registry.js    The servers this install knows about, and their clients
 lib/format.js      Byte formatting, size parsing, table/CSV output
 lib/errors.js      UserError, for messages shown without a stack trace
-lib/server.js      Local web interface: HTTP routes and their guards
-lib/web.js         The interface's page, inlined so it needs no assets
+lib/server.js      Dashboard: HTTP routes and their guards
+lib/web.js         The dashboard page, inlined so it needs no assets
+lib/qr.js          Vector QR codes for the dashboard
 test/              Tests, run with the built-in Node test runner
 ```
 
@@ -271,7 +345,7 @@ Run the test suite:
 npm test
 ```
 
-The tests cover the pure logic — size parsing and formatting, access-URL rewriting, table and CSV rendering, argument parsing and key lookup — and need Node 18 or newer for the built-in test runner, even though the tool itself runs on Node 14+.
+The tests cover the pure logic — size parsing and formatting, access-URL rewriting, table and CSV rendering, argument parsing and key lookup — along with the config store, the server registry, the dashboard's HTTP routes and its guards, driven over a real socket against a stand-in Outline server. They need Node 18 or newer for the built-in test runner, even though the tool itself runs on Node 14+.
 
 Every push and pull request runs the suite on Node 18, 20 and 22 via GitHub Actions, along with a syntax check and an audit of production dependencies. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
@@ -339,13 +413,17 @@ The HTTP calls use the built-in `node:https` module because the global `fetch()`
 
 ## Troubleshooting
 
-- **`Please configure your Management API URL first`** — set `OUTLINE_API_URL`, or replace the placeholder in `shadowtools.js`.
+- **`No Outline server is configured yet`** — add one in the dashboard (`node shadowtools.js ui`), pipe an access code into `servers add`, or set `OUTLINE_API_URL`.
+- **`That server is already saved as ...`** — the same Management API URL is already in your config; edit that entry instead of adding a second one.
+- **`comes from OUTLINE_API_URL in your environment`** — that server is defined by environment variables, so the dashboard will not rewrite it. Change the variables, or add it as a saved server.
+- **`... is not valid JSON, so it was left untouched`** — the config file was hand-edited into an invalid state. Fix or delete it; nothing is overwritten until it parses.
 - **`Could not reach the Outline server`** — check that the Management API URL is correct and that its port (usually `16942`) is reachable from your machine.
+- **`did not respond within 15 seconds`** — the address accepted nothing and refused nothing, which usually means a wrong IP or a firewall dropping the port. Raise `OUTLINE_TIMEOUT_MS` if your link is genuinely that slow.
 - **`Cannot find module 'qrcode-terminal'`** — run `npm install` in the project directory first.
 - **`The server presented an unexpected TLS certificate`** — either `OUTLINE_CERT_SHA256` is stale (recopy `certSha256` from Outline Manager after rebuilding or migrating the server), or something other than your Outline server answered. See [certificate pinning](#certificate-pinning).
 - **`is not a SHA-256 certificate fingerprint`** — `OUTLINE_CERT_SHA256` must be 64 hex characters, with or without colons.
 - **`Port 8787 is already in use`** — something else has the port; pass `--port 9000` (or any free port).
-- **The web interface says the token is invalid** — it is regenerated on every start, so reopen the URL currently printed in your terminal.
+- **The dashboard says the token is invalid** — it is regenerated on every start, so reopen the URL currently printed in your terminal.
 - **`Management API responded with 404`** — your Outline server may be running an older release that lacks data-limit or metrics endpoints. Upgrade the server, or stick to `list`, `add`, `remove` and `rename`.
 - **Keys print with the IP instead of your domain** — make sure `OUTLINE_DOMAIN` (or the `domain` constant) is set and non-empty.
 

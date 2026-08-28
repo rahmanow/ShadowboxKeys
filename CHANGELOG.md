@@ -6,6 +6,53 @@ Notable changes to shadowtools. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The web interface is now a multi-server admin dashboard.** It manages the
+  servers as well as the keys: paste a server's access code from Outline
+  Manager and it is saved for next time, so one panel covers every server you
+  run. Four sections — Overview, Access keys, Servers, Settings — with the
+  section in the URL hash so a reload lands where you were.
+- **Saved servers**, in `~/.config/shadowtools/config.json`, written `0600`
+  inside a `0700` directory and replaced by rename so an interrupted write
+  cannot truncate a file full of credentials. `SHADOWTOOLS_CONFIG` moves it.
+- **`servers` commands** — `servers`, `servers add`, `servers use`,
+  `servers remove` — and `--server` to point one command at a server without
+  changing the active one. Access codes are read from stdin, so they stay out
+  of shell history.
+- **`OUTLINE_TIMEOUT_MS`**, for the new Management API request timeout.
+
+### Changed
+
+- `OUTLINE_API_URL` still takes precedence and now appears in the dashboard as
+  a read-only *environment* entry, so existing setups behave exactly as before.
+- The dashboard's QR codes are vector rather than block characters, so they
+  scan off a screen and survive a screenshot. No new dependency: the encoder
+  already vendored inside `qrcode-terminal` is reused, behind a guarded
+  require that falls back to the previous block output.
+- An unreachable server no longer blanks the page. Overview and Access keys
+  report it and point at Servers; Servers and Settings keep working, since
+  that is where the problem gets fixed.
+
+### Fixed
+
+- **A short access-code secret was displayed in full.** The redaction that
+  shortens a Management API URL for display only truncated secrets longer than
+  its cap, so a shorter one passed through intact. It now keeps at most half.
+- **A Management API request had no timeout.** An address that drops packets
+  rather than refusing the connection — a wrong IP in a pasted access code, a
+  firewall — hung for the operating system's TCP timeout, well over a minute,
+  which in the dashboard looked like a frozen page. Requests now give up after
+  15 seconds and say which host did not answer.
+
+### Security
+
+- Adding servers to the dashboard could have ended the guarantee that a
+  Management API URL never reaches the browser. It does not: the server list
+  the page receives carries redacted URLs, and the full access code is served
+  by a single endpoint that exists to reveal it, only when someone clicks the
+  button that asks for it.
+
 ## [4.0.1] — 2026-08-28
 
 ### Changed
