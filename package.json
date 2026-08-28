@@ -1,11 +1,17 @@
 {
   "name": "shadowbox-keys",
-  "version": "2.0.0",
-  "description": "Command-line manager for Outline VPN (Shadowbox) access keys: list, create, rename, delete, set data limits, report usage and print QR codes",
-  "main": "shadowboxKey.js",
+  "version": "3.0.0",
+  "description": "Manage Outline VPN (Shadowbox) access keys from the command line or from code: list, create, rename, delete, set data limits, report usage and print QR codes",
+  "license": "MIT",
+  "main": "index.js",
   "bin": {
     "shadowbox-keys": "shadowboxKey.js"
   },
+  "files": [
+    "index.js",
+    "shadowboxKey.js",
+    "lib/"
+  ],
   "scripts": {
     "start": "node shadowboxKey.js",
     "test": "node --test"
@@ -17,7 +23,8 @@
     "shadowsocks",
     "access-keys",
     "cli",
-    "qrcode"
+    "qrcode",
+    "outline-br"
   ],
   "repository": {
     "type": "git",
