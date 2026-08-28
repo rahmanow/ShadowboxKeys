@@ -1,6 +1,7 @@
 # shadowtools
 
 [![CI](https://github.com/rahmanow/shadowtools/actions/workflows/ci.yml/badge.svg)](https://github.com/rahmanow/shadowtools/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/shadowtools.svg)](https://www.npmjs.com/package/shadowtools)
 
 Manage access keys on your [Outline VPN](https://getoutline.org/) (Shadowbox) server, from the terminal, a local web interface, or your own code. It lists, creates, renames and deletes keys, sets per-key data limits, reports how much data each key has used, and prints scannable QR codes so people can onboard with the Outline app instead of copy-pasting `ss://` strings.
 
