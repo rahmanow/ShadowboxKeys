@@ -23,7 +23,7 @@ const hasOpenssl = (() => {
 
 /** Creates a throwaway self-signed certificate, mimicking an Outline server's. */
 function createCertificate() {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shadowbox-keys-test-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shadowtools-test-'));
     const keyPath = path.join(dir, 'key.pem');
     const certPath = path.join(dir, 'cert.pem');
 

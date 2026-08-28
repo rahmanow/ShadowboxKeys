@@ -3,7 +3,7 @@
 /**
  * Programmatic entry point.
  *
- * The CLI in shadowboxKey.js is one consumer of this API; the exports below are
+ * The CLI in shadowtools.js is one consumer of this API; the exports below are
  * the same building blocks it uses, so anything the CLI can do is reachable from
  * code. getKeys() is kept signature-compatible with the outline-br module this
  * project absorbed, so existing callers keep working.

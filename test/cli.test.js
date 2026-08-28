@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { parseArgs, findKey } = require('../shadowboxKey');
+const { parseArgs, findKey } = require('../shadowtools');
 const { OutlineClient, normalizeFingerprint } = require('../lib/outline');
 const { UserError } = require('../lib/errors');
 
