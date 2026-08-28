@@ -1,6 +1,6 @@
 {
   "name": "shadowtools",
-  "version": "4.0.1",
+  "version": "4.1.0",
   "description": "Manage Outline VPN (Shadowbox) servers and access keys from a local admin dashboard, the command line, or your own code: list, create, rename, delete, set data limits, report usage and show QR codes",
   "license": "MIT",
   "main": "index.js",

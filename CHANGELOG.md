@@ -6,6 +6,11 @@ Notable changes to shadowtools. The format follows
 
 ## [Unreleased]
 
+## [4.1.0] — 2026-08-28
+
+The web interface becomes an admin dashboard that manages servers as well as
+keys, and can run in the background with a URL you can bookmark.
+
 ### Added
 
 - **The web interface is now a multi-server admin dashboard.** It manages the
@@ -153,5 +158,6 @@ They are recorded because the version numbers appear in the git history.
 - The original script: list access keys, rewriting the server IP to a custom
   domain.
 
-[Unreleased]: https://github.com/rahmanow/shadowtools/compare/v4.0.1...HEAD
+[Unreleased]: https://github.com/rahmanow/shadowtools/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/rahmanow/shadowtools/releases/tag/v4.1.0
 [4.0.1]: https://github.com/rahmanow/shadowtools/releases/tag/v4.0.1
