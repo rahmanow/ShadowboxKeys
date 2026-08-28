@@ -302,13 +302,59 @@ instead of storing one.
 Deploy your own copy with `npx wrangler deploy`; see [`worker/`](worker/) and
 [`wrangler.jsonc`](wrangler.jsonc). Neither is part of the npm package.
 
-### Installing Shadowbox on a new server
+## Installing Outline on a new server
 
-Not yet — the Servers section marks where it lands. Today, provision a server
-with Outline Manager and paste its access code into the dashboard. The plan is
-to connect to a fresh host over SSH, run the Outline installer on it, and have
-the resulting access code register itself, with no round trip through Outline
-Manager.
+When a server gets blocked, the slow part of replacing it is standing up the
+next one. Given SSH credentials, shadowtools does that for you:
+
+```console
+$ shadowtools provision 203.0.113.9 --keys 3 --qr
+SSH username [root]:
+Password for root@203.0.113.9:
+
+203.0.113.9:22 is new. Its host key fingerprint is:
+
+  SHA256:+VmCzKSFyvNZKhyK+ck3iMd1ayrM/wiH4J8mZ4p7gtM
+
+Check that against your provider's console before accepting.
+yes
+
+Uploading the Outline installer to /tmp/outline-install-...
+Running the installer. This takes a few minutes on a fresh server.
+...
+Installed Outline and saved it as "203.0.113.9" (id ef4a08d6d7cf).
+
+Creating 3 access keys:
+
+ss://...@203.0.113.9:443/?outline=1
+```
+
+The server is registered as it finishes, so `list`, `usage` and the dashboard
+see it immediately. It works on any host you can SSH into — a large provider or
+a small one, it makes no difference.
+
+| Option | Effect |
+| --- | --- |
+| `--user`, `--key`, `--passphrase`, `--port` | How to authenticate over SSH |
+| `--hostname` | Hostname or IP the server advertises in its access URLs |
+| `--api-port`, `--keys-port` | Ports for the management API and the keys |
+| `--name`, `--domain` | How the server is saved |
+| `--keys <n>` | Access keys to create once it is up (default 1) |
+
+Three things it does differently from the documented one-liner, each for a
+reason that matters when the network is hostile:
+
+- **SSH credentials are never stored.** They are used for one connection and
+  dropped; only the resulting access code is saved. A panel that remembers root
+  passwords hands over every server at once if the machine is seized.
+- **The host key is checked, and a new one must be accepted explicitly.** The
+  fingerprint shown is the same string `ssh-keyscan` and your provider's console
+  print, so it can be compared. A key that *changes* is a hard failure, not a
+  prompt — rerun with `provision forget <host>` if you genuinely rebuilt it.
+- **The installer is uploaded over SSH rather than fetched by the server.**
+  Outline's own instructions have the server pull the script from GitHub, which
+  assumes it can reach GitHub unmolested — not a safe assumption for a host in
+  a censored network, and one more thing for somebody else to answer.
 
 ### How it is secured
 
@@ -419,6 +465,7 @@ lib/format.js      Byte formatting, size parsing, table/CSV output
 lib/errors.js      UserError, for messages shown without a stack trace
 lib/server.js      Dashboard: HTTP routes and their guards
 lib/service.js     Running the dashboard as a launchd or systemd user service
+lib/provision.js   Installing Outline on a server over SSH
 lib/web.js         The dashboard page, inlined so it needs no assets
 lib/qr.js          Vector QR codes for the dashboard
 worker/            A Cloudflare Worker serving the dashboard on demo data

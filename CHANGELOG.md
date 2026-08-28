@@ -8,6 +8,18 @@ Notable changes to shadowtools. The format follows
 
 ### Added
 
+- **`provision` installs Outline on a server over SSH**, registers it, and
+  creates access keys, so replacing a blocked server is one command rather than
+  a round trip through Outline Manager. Works against any host you can SSH into.
+  SSH credentials are used for the connection and never written to disk; only
+  the resulting access code is saved. The host key is verified, with a new one
+  requiring explicit confirmation and a changed one failing outright. The
+  installer is uploaded over the SSH channel rather than fetched by the server,
+  which does not assume the server can reach GitHub unmolested.
+- `ssh2` as a runtime dependency, required only by `provision` and loaded
+  lazily, so the rest of the CLI works if its optional native parts fail to
+  build.
+
 - A public preview of the dashboard, deployed as a Cloudflare Worker on
   invented data, for looking at the interface without setting anything up. It
   serves the page from `lib/web.js` unmodified, so it cannot drift from what

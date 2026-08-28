@@ -13,6 +13,7 @@ const domain = process.env.OUTLINE_DOMAIN || ''; // set your custom domain if yo
 const certSha256 = process.env.OUTLINE_CERT_SHA256 || ''; // recommended: certSha256 from Outline Manager, to pin the server's certificate
 // END Variables to change
 
+const fs = require('fs');
 const qrcode = require('qrcode-terminal');
 const { UserError } = require('./lib/errors');
 const { createStore, readToken, rotateToken, tokenPath } = require('./lib/config');
@@ -36,6 +37,8 @@ Commands:
   servers add <name>          Save a server, reading its access code from stdin
   servers use <server>        Choose the server other commands act on
   servers remove <server>     Forget a saved server (the server itself is untouched)
+  provision [address]         Install Outline on a server over SSH and save it
+  provision forget <host>     Forget a recorded SSH host key (rebuilt server)
   ui                          Serve the admin dashboard until you stop it
   service install             Run the dashboard in the background, from login on
   service status              Whether it is running, and the URL to open
@@ -57,6 +60,18 @@ Options:
   --lines <n> How many log lines to show (service logs, default 50)
   --follow    Keep printing new log lines (service logs)
   --rotate    Mint a new token, invalidating existing links (service url)
+
+Provisioning options:
+  --user <name>     SSH username (default root)
+  --key <path>      Private key to authenticate with, instead of a password
+  --passphrase <s>  Passphrase for that key
+  --port <n>        SSH port (default 22)
+  --hostname <h>    Hostname or IP the server should advertise in access URLs
+  --api-port <n>    Port for the management API
+  --keys-port <n>   Port for the access keys
+  --name <name>     Name to save the server under (default: its address)
+  --domain <d>      Custom domain to use in access URLs
+  --keys <n>        Access keys to create once installed (default 1)
   -h, --help  Show this help
 
 Sizes accept a unit suffix, e.g. 10GB, 500MB, 2TB.
@@ -74,6 +89,7 @@ Configuration:
   SHADOWTOOLS_CONFIG   Override where saved servers are stored.
 
 Examples:
+  node shadowtools.js provision 203.0.113.9 --keys 3 --qr
   node shadowtools.js service install
   node shadowtools.js list --qr
   node shadowtools.js add Alice --limit 50GB
@@ -99,6 +115,10 @@ function parseArgs(argv) {
             flags.server = argv[++i];
         } else if (arg === '--lines') {
             flags.lines = argv[++i];
+        } else if (arg === '--user' || arg === '--key' || arg === '--passphrase' ||
+                   arg === '--hostname' || arg === '--api-port' || arg === '--keys-port' ||
+                   arg === '--name' || arg === '--domain' || arg === '--keys') {
+            flags[arg.slice(2)] = argv[++i];
         } else if (arg.startsWith('--')) {
             flags[arg.slice(2)] = true;
         } else {
@@ -450,6 +470,145 @@ async function uiCommand(registry, args, flags) {
 }
 
 /* ---------------------------------------------------------------------------
+ * Provisioning a new Outline server over SSH.
+ * ------------------------------------------------------------------------- */
+
+/** Reads one line from the terminal, optionally without echoing it. */
+function ask(question, { silent = false } = {}) {
+    return new Promise(resolve => {
+        const readline = require('readline');
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+        if (!silent) {
+            rl.question(question, answer => { rl.close(); resolve(answer.trim()); });
+            return;
+        }
+
+        // Suppress echo so a password is not left on screen or in a scrollback.
+        const onData = () => rl.output.write('');
+        rl.output.write(question);
+        const wasRaw = process.stdin.isRaw;
+        if (process.stdin.isTTY) process.stdin.setRawMode(true);
+
+        let value = '';
+        const onKey = chunk => {
+            const text = String(chunk);
+            for (const ch of text) {
+                if (ch === '\r' || ch === '\n') {
+                    process.stdin.removeListener('data', onKey);
+                    if (process.stdin.isTTY) process.stdin.setRawMode(Boolean(wasRaw));
+                    rl.output.write('\n');
+                    rl.close();
+                    return resolve(value);
+                }
+                if (ch === '\u0003') { process.exit(130); }
+                if (ch === '\u007f' || ch === '\b') value = value.slice(0, -1);
+                else value += ch;
+            }
+        };
+        process.stdin.on('data', onKey);
+        rl.input.on('data', onData);
+    });
+}
+
+/**
+ * Installs Outline on a server and registers it, in one pass.
+ *
+ * Credentials are asked for here, used, and dropped: nothing about the SSH
+ * login is written to disk. What survives is the access code the installer
+ * prints, which is what shadowtools needed all along.
+ */
+async function provisionCommand(registry, args, flags) {
+    const provision = require('./lib/provision');
+    const [sub] = args;
+
+    if (sub === 'forget') {
+        const target = args[1];
+        if (!target) throw new UserError('Say which host to forget, e.g. provision forget 203.0.113.9');
+        console.log(provision.forgetHost(target)
+            ? `Forgot the host key for ${target}. The next connection will ask you to confirm a new one.`
+            : `No host key was recorded for ${target}.`);
+        return;
+    }
+
+    const host = args[0] || await ask('Server address (IP or hostname): ');
+    if (!host) throw new UserError('A server address is required.');
+
+    const port = flags.port === undefined ? 22 : parsePort(flags.port, 22);
+    const username = flags.user || await ask('SSH username [root]: ') || 'root';
+
+    let password;
+    let privateKey;
+    if (flags.key) {
+        try {
+            privateKey = fs.readFileSync(flags.key);
+        } catch (err) {
+            throw new UserError(`Could not read the private key at ${flags.key}: ${err.message}`);
+        }
+    } else {
+        password = await ask(`Password for ${username}@${host}: `, { silent: true });
+        if (!password) throw new UserError('No password given, and no --key supplied.');
+    }
+
+    console.log(`\nConnecting to ${username}@${host}:${port} ...`);
+
+    const client = await provision.connect({
+        host, port, username, password, privateKey, passphrase: flags.passphrase,
+        onUnknownHost: ({ hostPort, fingerprint }) => {
+            // Synchronous by necessity: ssh2 wants a verdict before it will
+            // authenticate, which is exactly when the question should be asked.
+            console.log(`\n${hostPort} is new. Its host key fingerprint is:\n\n  ${fingerprint}\n`);
+            console.log('Check that against your provider\'s console before accepting.');
+            const answer = require('child_process')
+                .execSync('read -r a </dev/tty; echo "$a"', { shell: '/bin/bash', encoding: 'utf8' })
+                .trim().toLowerCase();
+            return answer === 'yes' || answer === 'y';
+        },
+    });
+
+    // From here the credential has done its job; drop the reference.
+    password = undefined;
+    privateKey = undefined;
+
+    try {
+        const { accessCode } = await provision.install(client, {
+            hostname: flags.hostname,
+            apiPort: flags['api-port'],
+            keysPort: flags['keys-port'],
+            onOutput: chunk => process.stdout.write(chunk),
+        });
+
+        const name = flags.name || host;
+        const id = registry.add({ name, accessCode, domain: flags.domain || '' });
+        console.log(`\n\nInstalled Outline and saved it as "${name}" (id ${id}).`);
+
+        // "Generate keys right away" is the point: a replacement server is no
+        // use until somebody can actually connect to it.
+        const count = flags.keys === undefined ? 1 : Number(flags.keys);
+        if (!Number.isInteger(count) || count < 0) {
+            throw new UserError(`"${flags.keys}" is not a number of keys.`);
+        }
+
+        if (count > 0) {
+            const { client: outline } = registry.clientById(id);
+            const host_ = registry.list().find(s => s.id === id);
+            console.log(`\nCreating ${count} access ${count === 1 ? 'key' : 'keys'}:\n`);
+            for (let i = 1; i <= count; i++) {
+                const key = await outline.createKey(count === 1 ? 'key-1' : `key-${i}`);
+                const url = rewriteAccessUrl(key.accessUrl, outline.hostname,
+                    (host_ && host_.domain) || outline.hostname);
+                console.log(url);
+                if (flags.qr) printQr(key.name, url);
+            }
+        }
+
+        console.log(`\nManage it with "shadowtools list", or open the dashboard with "shadowtools ui".`);
+    } finally {
+        client.end();
+    }
+}
+
+/* ---------------------------------------------------------------------------
  * The background service.
  * ------------------------------------------------------------------------- */
 
@@ -636,6 +795,7 @@ async function main() {
     // These two manage or serve the configuration itself, so they must work
     // before any Outline server exists — that is how the first one gets added.
     if (commandName === 'servers') return serversCommand(registry, args, flags);
+    if (commandName === 'provision') return provisionCommand(registry, args, flags);
     if (commandName === 'service') return serviceCommand(args, flags);
     if (commandName === 'ui') return uiCommand(registry, args, flags);
 
