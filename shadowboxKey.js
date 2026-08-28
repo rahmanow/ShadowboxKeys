@@ -6,6 +6,7 @@
 // so the Management API URL never ends up committed to version control.
 const managementApiUrl = process.env.OUTLINE_API_URL || 'https://xx.xx.xx.xxx:16942/xxxxxxxxxxxxxxxxxxxxxx'; // Management API URL from Outline Manager > Settings
 const domain = process.env.OUTLINE_DOMAIN || ''; // set your custom domain if you have one, e.g. 'vpn.example.com'
+const certSha256 = process.env.OUTLINE_CERT_SHA256 || ''; // recommended: certSha256 from Outline Manager, to pin the server's certificate
 // END Variables to change
 
 const qrcode = require('qrcode-terminal');
@@ -39,8 +40,11 @@ Options:
 Sizes accept a unit suffix, e.g. 10GB, 500MB, 2TB.
 
 Configuration (environment variables):
-  OUTLINE_API_URL   Management API URL from Outline Manager > Settings
-  OUTLINE_DOMAIN    Optional custom domain to use in place of the server IP
+  OUTLINE_API_URL      Management API URL from Outline Manager > Settings
+  OUTLINE_DOMAIN       Optional custom domain to use in place of the server IP
+  OUTLINE_CERT_SHA256  Recommended. The server's certSha256, from the same place
+                       in Outline Manager. When set, the tool refuses to talk to
+                       any server presenting a different certificate.
 
 Examples:
   node shadowboxKey.js list --qr
@@ -257,7 +261,7 @@ async function main() {
         );
     }
 
-    const client = new OutlineClient(managementApiUrl);
+    const client = new OutlineClient(managementApiUrl, certSha256);
     await command(client, domain || client.hostname, args, flags);
 }
 
