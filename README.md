@@ -22,18 +22,26 @@ npm install
 
 ## Configuration
 
-Configure the tool either with environment variables (recommended — keeps secrets out of the code) or by editing the two constants at the top of `shadowboxKey.js`.
+Configure the tool either with environment variables (recommended — keeps secrets out of the code) or by editing the constants at the top of `shadowboxKey.js`.
 
 | Setting | Environment variable | Description |
 | --- | --- | --- |
 | Management API URL | `OUTLINE_API_URL` | The Management API URL copied from Outline Manager. **Required.** |
+| Certificate fingerprint | `OUTLINE_CERT_SHA256` | The server's `certSha256`. Optional but **recommended** — see [certificate pinning](#certificate-pinning). |
 | Custom domain | `OUTLINE_DOMAIN` | A domain that points at your Outline server. Optional — leave empty to keep the raw IP in the access URLs. |
+
+Outline Manager gives you the first two together. Under **Settings → Management API URL** it shows a line like:
+
+```json
+{"apiUrl":"https://1.2.3.4:16942/AbCdEf123","certSha256":"E3823F9BB490D354...52F5A584"}
+```
 
 A convenient way to keep these out of your shell history is a `.env` file (already git-ignored) that you source before running:
 
 ```bash
 # .env
 export OUTLINE_API_URL="https://1.2.3.4:16942/AbCdEf123"
+export OUTLINE_CERT_SHA256="E3823F9BB490D354...52F5A584"
 export OUTLINE_DOMAIN="vpn.example.com"
 ```
 
@@ -145,17 +153,40 @@ The tests cover the pure logic — size parsing and formatting, access-URL rewri
 
 Every push and pull request runs the suite on Node 18, 20 and 22 via GitHub Actions, along with a syntax check and an audit of production dependencies. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
-## A note on TLS verification
+## Certificate pinning
 
-Outline servers use a self-signed TLS certificate for the Management API, so the tool disables certificate verification (`rejectUnauthorized: false`) for those requests. This is normal for the Outline Management API, but it does mean the connection is not protected against man-in-the-middle attacks. Only run this against servers you control, ideally from a trusted network.
+Outline servers use a self-signed TLS certificate for the Management API, so the usual chain validation cannot apply and the tool disables it (`rejectUnauthorized: false`). On its own that would leave the connection open to a man-in-the-middle: anything that can answer on the server's address would be trusted.
 
-This is also why the HTTP calls use the built-in `node:https` module rather than the global `fetch()`: `fetch` has no supported way to relax certificate checks for a single request — it ignores the `agent` option, and its dispatcher lives in `undici`, which would mean taking on a dependency to do what `node:https` already does.
+Setting `OUTLINE_CERT_SHA256` closes that gap. The tool then checks the certificate the server presents against the fingerprint you configured, and **aborts before sending anything** if they differ:
+
+```console
+$ OUTLINE_CERT_SHA256=aaaa...aaaa node shadowboxKey.js list
+The server presented an unexpected TLS certificate, so the request was not sent.
+  expected: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  received: e3823f9bb490d35487ee013ec7d23a3662f76b95eb01a40f4851905152f5a584
+Check OUTLINE_CERT_SHA256 against certSha256 in Outline Manager. If it has not
+changed there, you may be talking to the wrong server.
+```
+
+The check runs at the end of the TLS handshake, before any request bytes leave your machine. That ordering matters: the path in the Management API URL *is* the admin credential, so it must never be sent to a server that hasn't been authenticated.
+
+The fingerprint is accepted in either form — the bare hex Outline Manager reports as `certSha256`, or the colon-separated form `openssl x509 -noout -fingerprint -sha256` prints — in any case.
+
+Pinning is optional for backwards compatibility. Leave `OUTLINE_CERT_SHA256` unset and the tool behaves as before, connecting without verifying which server answered. Set it whenever you can, especially on an untrusted network.
+
+If you rebuild or migrate your server, its certificate changes; copy the new `certSha256` from Outline Manager.
+
+### Why `node:https` rather than `fetch()`
+
+The HTTP calls use the built-in `node:https` module because the global `fetch()` has no supported way to relax certificate checks or inspect the peer certificate for a single request — it ignores the `agent` option, and its dispatcher lives in `undici`, which would mean taking on a dependency to do what `node:https` already does.
 
 ## Troubleshooting
 
 - **`Please configure your Management API URL first`** — set `OUTLINE_API_URL`, or replace the placeholder in `shadowboxKey.js`.
 - **`Could not reach the Outline server`** — check that the Management API URL is correct and that its port (usually `16942`) is reachable from your machine.
 - **`Cannot find module 'qrcode-terminal'`** — run `npm install` in the project directory first.
+- **`The server presented an unexpected TLS certificate`** — either `OUTLINE_CERT_SHA256` is stale (recopy `certSha256` from Outline Manager after rebuilding or migrating the server), or something other than your Outline server answered. See [certificate pinning](#certificate-pinning).
+- **`is not a SHA-256 certificate fingerprint`** — `OUTLINE_CERT_SHA256` must be 64 hex characters, with or without colons.
 - **`Management API responded with 404`** — your Outline server may be running an older release that lacks data-limit or metrics endpoints. Upgrade the server, or stick to `list`, `add`, `remove` and `rename`.
 - **Keys print with the IP instead of your domain** — make sure `OUTLINE_DOMAIN` (or the `domain` constant) is set and non-empty.
 
