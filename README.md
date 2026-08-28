@@ -277,6 +277,8 @@ Every push and pull request runs the suite on Node 18, 20 and 22 via GitHub Acti
 
 ## Releasing
 
+Past releases are listed in [CHANGELOG.md](CHANGELOG.md).
+
 Releases publish from CI, so no npm token exists on anyone's machine or in
 repository secrets. Authentication uses npm
 [trusted publishing](https://docs.npmjs.com/trusted-publishers): GitHub Actions

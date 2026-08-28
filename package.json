@@ -8,6 +8,7 @@
     "shadowtools": "shadowtools.js"
   },
   "files": [
+    "CHANGELOG.md",
     "index.js",
     "shadowtools.js",
     "lib/"
