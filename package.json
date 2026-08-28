@@ -7,7 +7,8 @@
     "shadowbox-keys": "shadowboxKey.js"
   },
   "scripts": {
-    "start": "node shadowboxKey.js"
+    "start": "node shadowboxKey.js",
+    "test": "node --test"
   },
   "keywords": [
     "outline",

@@ -261,7 +261,12 @@ async function main() {
     await command(client, domain || client.hostname, args, flags);
 }
 
-main().catch(err => {
-    console.error(err instanceof UserError ? err.message : `Error: ${err.message}`);
-    process.exit(1);
-});
+// Only run when invoked directly, so the tests can import the helpers below.
+if (require.main === module) {
+    main().catch(err => {
+        console.error(err instanceof UserError ? err.message : `Error: ${err.message}`);
+        process.exit(1);
+    });
+}
+
+module.exports = { parseArgs, findKey };

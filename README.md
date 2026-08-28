@@ -1,5 +1,7 @@
 # ShadowboxKeys
 
+[![CI](https://github.com/rahmanow/ShadowboxKeys/actions/workflows/ci.yml/badge.svg)](https://github.com/rahmanow/ShadowboxKeys/actions/workflows/ci.yml)
+
 A command-line tool for managing access keys on your [Outline VPN](https://getoutline.org/) (Shadowbox) server. It lists, creates, renames and deletes keys, sets per-key data limits, reports how much data each key has used, and prints scannable QR codes so people can onboard with the Outline app instead of copy-pasting `ss://` strings.
 
 It can also rewrite every access URL to use your own domain in place of the server's raw IP address — handy when you have pointed a domain at your Outline server.
@@ -128,7 +130,20 @@ shadowboxKey.js    CLI entry point: argument parsing and commands
 lib/outline.js     Outline Management API client
 lib/format.js      Byte formatting, size parsing, table/CSV output
 lib/errors.js      UserError, for messages shown without a stack trace
+test/              Unit tests, run with the built-in Node test runner
 ```
+
+## Development
+
+Run the test suite:
+
+```bash
+npm test
+```
+
+The tests cover the pure logic — size parsing and formatting, access-URL rewriting, table and CSV rendering, argument parsing and key lookup — and need Node 18 or newer for the built-in test runner, even though the tool itself runs on Node 14+.
+
+Every push and pull request runs the suite on Node 18, 20 and 22 via GitHub Actions, along with a syntax check and an audit of production dependencies. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## A note on TLS verification
 
