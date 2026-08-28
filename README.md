@@ -280,6 +280,28 @@ Two consequences worth knowing:
   dashboard; save it with `servers add` first. `install` warns you when it
   sees them set.
 
+### Trying the interface without a server
+
+A preview of the dashboard runs at
+**[shadowtools-preview.rahmanow.workers.dev](https://shadowtools-preview.rahmanow.workers.dev)**,
+on invented data. It serves the page from `lib/web.js` unmodified, so it cannot
+drift from what the tool actually shows; only the data behind it is made up.
+Useful for looking at the interface — including the states that are awkward to
+reach on purpose, like a key over its limit and a server that will not answer —
+without setting anything up.
+
+It is a preview and not a deployment, and it cannot become one. An Outline
+server's Management API is served with a self-signed certificate, which
+shadowtools authenticates by [pinning the fingerprint](#certificate-pinning).
+The Workers runtime has no equivalent: `fetch()` refuses any origin whose
+certificate is not publicly trusted, and `connect()` exposes neither
+verification control nor the peer certificate. So a Worker cannot talk to an
+Outline server at all. The endpoints that would take an access code refuse
+instead of storing one.
+
+Deploy your own copy with `npx wrangler deploy`; see [`worker/`](worker/) and
+[`wrangler.jsonc`](wrangler.jsonc). Neither is part of the npm package.
+
 ### Installing Shadowbox on a new server
 
 Not yet — the Servers section marks where it lands. Today, provision a server
@@ -399,6 +421,7 @@ lib/server.js      Dashboard: HTTP routes and their guards
 lib/service.js     Running the dashboard as a launchd or systemd user service
 lib/web.js         The dashboard page, inlined so it needs no assets
 lib/qr.js          Vector QR codes for the dashboard
+worker/            A Cloudflare Worker serving the dashboard on demo data
 test/              Tests, run with the built-in Node test runner
 ```
 

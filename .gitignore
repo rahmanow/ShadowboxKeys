@@ -10,5 +10,8 @@ node_modules/
 .env
 .env.*
 
+# Wrangler's local state for the dashboard preview
+.wrangler/
+
 # OS files
 .DS_Store

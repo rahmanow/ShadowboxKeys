@@ -1,0 +1,16 @@
+{
+  // A public preview of the dashboard interface, on invented data.
+  //
+  // Not a deployment of shadowtools itself, and it cannot become one: the
+  // Outline Management API is served with a self-signed certificate that the
+  // Workers runtime has no way to accept or pin, so a Worker cannot reach an
+  // Outline server at all. See worker/index.js.
+  //
+  // Nothing here is part of the npm package - package.json's "files" list
+  // ships index.js, shadowtools.js and lib/ only.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "shadowtools-preview",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-08-01",
+  "observability": { "enabled": true }
+}

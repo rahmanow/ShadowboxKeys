@@ -6,6 +6,16 @@ Notable changes to shadowtools. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A public preview of the dashboard, deployed as a Cloudflare Worker on
+  invented data, for looking at the interface without setting anything up. It
+  serves the page from `lib/web.js` unmodified, so it cannot drift from what
+  ships. It is a preview and not a deployment: the Workers runtime cannot
+  accept or pin an Outline server's self-signed certificate, so the endpoints
+  that would take an access code refuse rather than store one. Not part of the
+  npm package.
+
 ## [4.1.0] — 2026-08-28
 
 The web interface becomes an admin dashboard that manages servers as well as
