@@ -21,6 +21,12 @@ Notable changes to shadowtools. The format follows
   changing the active one. Access codes are read from stdin, so they stay out
   of shell history.
 - **`OUTLINE_TIMEOUT_MS`**, for the new Management API request timeout.
+- **The dashboard can run as a background service** — `service install` and
+  friends. It registers with the service manager the platform already has,
+  launchd on macOS and systemd's user instance on Linux, so it starts at login,
+  restarts if it exits, and answers on the same URL every time. Per-user
+  agents only: nothing runs as root, nothing installs system-wide, and no step
+  asks for a password.
 
 ### Changed
 
@@ -33,6 +39,11 @@ Notable changes to shadowtools. The format follows
 - An unreachable server no longer blanks the page. Overview and Access keys
   report it and point at Servers; Servers and Settings keep working, since
   that is where the problem gets fixed.
+- **The dashboard URL is now stable.** The token is stored in
+  `~/.config/shadowtools/token` (mode `0600`) rather than minted per run, so a
+  bookmark survives a restart. `ui` and the background service read the same
+  file, so both hand out the same URL. `service url --rotate` mints a new one
+  and invalidates every link given out before it.
 
 ### Fixed
 
@@ -47,6 +58,17 @@ Notable changes to shadowtools. The format follows
 
 ### Security
 
+- **The service never writes a credential into its own definition.** A launchd
+  plist and a systemd unit are ordinary files that other tooling reads and
+  backup software copies, so `OUTLINE_API_URL` and `OUTLINE_CERT_SHA256` are
+  deliberately not carried into one — only locations and tunables are.
+  `service install` says so when it sees them set, since a server configured
+  only that way will not appear in the background dashboard.
+- **The token is kept out of the service log.** launchd creates a log file
+  world-readable, and the dashboard prints its URL at startup, which would have
+  handed the token to any other user on the machine. The URL is now printed
+  only when stdout is a terminal; the log records that it is listening and
+  nothing more, and the log and its directory are created `0600`/`0700`.
 - Adding servers to the dashboard could have ended the guarantee that a
   Management API URL never reaches the browser. It does not: the server list
   the page receives carries redacted URLs, and the full access code is served

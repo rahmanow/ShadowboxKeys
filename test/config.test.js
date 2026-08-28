@@ -10,7 +10,10 @@ const {
     createStore,
     normalizeConfig,
     parseAccessCode,
+    readToken,
     redactApiUrl,
+    rotateToken,
+    tokenPath,
     ENV_SERVER_ID,
 } = require('../lib/config');
 const { UserError } = require('../lib/errors');
@@ -136,4 +139,71 @@ test('normalizeConfig keeps the environment server as a valid active choice', ()
     // and the dashboard would forget which server you picked.
     const config = normalizeConfig({ activeServerId: ENV_SERVER_ID, servers: [] });
     assert.strictEqual(config.activeServerId, ENV_SERVER_ID);
+});
+
+/* --------------------------------------------------------------------------
+ * The dashboard token, which is what makes the service's URL bookmarkable.
+ * ------------------------------------------------------------------------ */
+
+/** Points the config helpers at a scratch directory for one test. */
+function tempConfigHome(t) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shadowtools-token-'));
+    const previous = process.env.SHADOWTOOLS_CONFIG;
+    process.env.SHADOWTOOLS_CONFIG = path.join(dir, 'config.json');
+    t.after(() => {
+        if (previous === undefined) delete process.env.SHADOWTOOLS_CONFIG;
+        else process.env.SHADOWTOOLS_CONFIG = previous;
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+    return dir;
+}
+
+test('the token is minted once and then reused, so a bookmark keeps working', async t => {
+    tempConfigHome(t);
+
+    const first = readToken();
+    assert.match(first, /^[0-9a-f]{48}$/);
+    assert.strictEqual(readToken(), first);
+    assert.strictEqual(readToken(), first);
+});
+
+test('the token file is readable only by its owner', async t => {
+    // It authorises full administrative control of every saved server, so it
+    // gets the same treatment as the config file sitting beside it.
+    tempConfigHome(t);
+    readToken();
+
+    assert.strictEqual(fs.statSync(tokenPath()).mode & 0o777, 0o600);
+    assert.strictEqual(fs.statSync(path.dirname(tokenPath())).mode & 0o777, 0o700);
+});
+
+test('rotating replaces the token and keeps the new one', async t => {
+    tempConfigHome(t);
+
+    const before = readToken();
+    const after = rotateToken();
+    assert.notStrictEqual(after, before);
+    assert.strictEqual(readToken(), after);
+    assert.strictEqual(fs.statSync(tokenPath()).mode & 0o777, 0o600);
+});
+
+test('a damaged token file is replaced rather than served', async t => {
+    // A truncated or hand-edited token would authorise nothing and fail with a
+    // 401 that says the URL is wrong, which sends you looking in the wrong place.
+    tempConfigHome(t);
+    readToken();
+
+    for (const junk of ['', '   ', 'not-a-token', 'abc123', 'f'.repeat(47), 'g'.repeat(48)]) {
+        fs.writeFileSync(tokenPath(), junk);
+        const recovered = readToken();
+        assert.match(recovered, /^[0-9a-f]{48}$/, `for ${JSON.stringify(junk)}`);
+        assert.strictEqual(readToken(), recovered, 'the replacement must then stick');
+    }
+});
+
+test('a token written with a trailing newline reads back clean', async t => {
+    tempConfigHome(t);
+    const token = readToken();
+    assert.ok(fs.readFileSync(tokenPath(), 'utf8').endsWith('\n'));
+    assert.strictEqual(token.trim(), token);
 });

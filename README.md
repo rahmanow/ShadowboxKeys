@@ -102,7 +102,13 @@ node shadowtools.js <command> [options]
 | `servers add <name>` | Save a server, reading its access code from stdin |
 | `servers use <server>` | Choose the server other commands act on |
 | `servers remove <server>` | Forget a saved server (the server itself is untouched) |
-| `ui` | Open the admin dashboard, covering all of the above |
+| `ui` | Serve the admin dashboard until you stop it |
+| `service install` | Run the dashboard in the background, from login on |
+| `service status` | Whether it is running, and the URL to open |
+| `service start` / `stop` / `restart` | Control the background service |
+| `service logs` | Show what the background service has printed |
+| `service url` | Print the dashboard URL |
+| `service uninstall` | Stop it and remove the service definition |
 
 `<key>` may be either a key id or a key name, and `<server>` either a server id or a server name. Running with no command at all is the same as `list`, so the original behaviour still works.
 
@@ -115,7 +121,10 @@ Key commands act on whichever server is active. Use `servers use` to change that
 | `--csv` | `list`, `usage`, `servers` | Output CSV instead of a table |
 | `--limit <size>` | `add` | Give the new key a data limit straight away |
 | `--server <s>` | key commands | Act on this server instead of the active one |
-| `--port <n>` | `ui` | Port for the dashboard (default 8787) |
+| `--port <n>` | `ui`, `service install` | Port for the dashboard (default 8787) |
+| `--lines <n>` | `service logs` | How many log lines to show (default 50) |
+| `--follow` | `service logs` | Keep printing new lines |
+| `--rotate` | `service url` | Mint a new token, invalidating existing links |
 | `-h`, `--help` | — | Show usage |
 
 Sizes accept a unit suffix: `10GB`, `500MB`, `2TB`, or a plain byte count.
@@ -221,6 +230,56 @@ whether that server is answering. When one is unreachable, Overview and Access
 keys say so and point you at Servers rather than showing a blank page — and
 Servers and Settings keep working, since that is where you go to fix it.
 
+### Running it in the background
+
+`ui` serves the dashboard for as long as you keep the terminal open. To leave it
+running and bookmark it:
+
+```bash
+node shadowtools.js service install
+```
+
+That registers it with whatever service manager the platform already has —
+**launchd** on macOS, **systemd's user instance** on Linux — so it starts at
+login, comes back if it crashes, and answers on the same URL every time.
+
+```console
+$ node shadowtools.js service status
+running  pid 4821  port 8787
+Dashboard: http://127.0.0.1:8787/?t=979ea2e12d7c5ba8e1d38631b2effd32583bca3b035775f3
+Definition: ~/Library/LaunchAgents/com.rahmanow.shadowtools.plist
+Log:        ~/Library/Logs/shadowtools/service.log
+```
+
+| Command | What it does |
+| --- | --- |
+| `service install` | Write the service definition and start it (`--port` to choose a port) |
+| `service status` | Whether it is running, its pid and port, and the URL to open |
+| `service start` / `stop` / `restart` | Control it |
+| `service logs` | What it has printed (`--lines`, `--follow`) |
+| `service url` | Print the dashboard URL (`--rotate` to invalidate existing links) |
+| `service uninstall` | Stop it and remove the definition; saved servers are untouched |
+
+Nothing here runs as root and nothing is installed system-wide. These are
+per-user agents, which is the right privilege level for something holding one
+user's Outline credentials, and it means no step asks for your password.
+Windows has no equivalent here — run `ui` in a terminal instead.
+
+Two consequences worth knowing:
+
+- **The URL is now stable.** The token lives in `~/.config/shadowtools/token`
+  (mode `0600`) instead of being minted per run, so a bookmark keeps working
+  across restarts. `ui` reads the same file, so both ways of starting the
+  dashboard hand out the same URL. If a link ends up somewhere it should not,
+  `service url --rotate` mints a new one and kills every old link.
+- **The service cannot see your shell.** A background agent does not inherit
+  the environment you installed it from, and a service definition is an
+  ordinary file that other tooling reads — so `OUTLINE_API_URL` and
+  `OUTLINE_CERT_SHA256` are deliberately *not* written into it. A server
+  configured only through those variables will not appear in the background
+  dashboard; save it with `servers add` first. `install` warns you when it
+  sees them set.
+
 ### Installing Shadowbox on a new server
 
 Not yet — the Servers section marks where it lands. Today, provision a server
@@ -249,9 +308,14 @@ dashboard is deliberately narrow:
   refused, which is what stops DNS rebinding from turning an attacker's domain
   into a route to your machine.
 
-The token changes every run, so old URLs stop working once you restart it. This
-is a single-user local tool: do not put it behind a reverse proxy or expose the
-port.
+When you run `ui` yourself the URL is printed to your terminal. Under the
+background service stdout is a log file, so the URL is deliberately *not*
+printed there — the log says only that the dashboard is listening, and
+`service url` is how you get the address. The log and its directory are created
+`0600`/`0700` rather than left at the service manager's world-readable default.
+
+This is a single-user local tool: do not put it behind a reverse proxy or
+expose the port.
 
 ## Using it from code
 
@@ -332,6 +396,7 @@ lib/registry.js    The servers this install knows about, and their clients
 lib/format.js      Byte formatting, size parsing, table/CSV output
 lib/errors.js      UserError, for messages shown without a stack trace
 lib/server.js      Dashboard: HTTP routes and their guards
+lib/service.js     Running the dashboard as a launchd or systemd user service
 lib/web.js         The dashboard page, inlined so it needs no assets
 lib/qr.js          Vector QR codes for the dashboard
 test/              Tests, run with the built-in Node test runner
@@ -422,7 +487,9 @@ The HTTP calls use the built-in `node:https` module because the global `fetch()`
 - **`Cannot find module 'qrcode-terminal'`** — run `npm install` in the project directory first.
 - **`The server presented an unexpected TLS certificate`** — either `OUTLINE_CERT_SHA256` is stale (recopy `certSha256` from Outline Manager after rebuilding or migrating the server), or something other than your Outline server answered. See [certificate pinning](#certificate-pinning).
 - **`is not a SHA-256 certificate fingerprint`** — `OUTLINE_CERT_SHA256` must be 64 hex characters, with or without colons.
-- **`Port 8787 is already in use`** — something else has the port; pass `--port 9000` (or any free port).
+- **`Port 8787 is already in use`** — often the background service is already serving it; run `shadowtools service status` for its URL. Otherwise pass `--port 9000` (or any free port).
+- **`service status` says running but nothing answers** — the process started and then failed to bind, usually because something else holds the port. Check `shadowtools service logs`.
+- **The background dashboard shows no servers, but the CLI does** — the server is configured through `OUTLINE_API_URL`, which a background service cannot see. Save it with `shadowtools servers add` instead.
 - **The dashboard says the token is invalid** — it is regenerated on every start, so reopen the URL currently printed in your terminal.
 - **`Management API responded with 404`** — your Outline server may be running an older release that lacks data-limit or metrics endpoints. Upgrade the server, or stick to `list`, `add`, `remove` and `rename`.
 - **Keys print with the IP instead of your domain** — make sure `OUTLINE_DOMAIN` (or the `domain` constant) is set and non-empty.

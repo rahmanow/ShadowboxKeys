@@ -15,7 +15,7 @@ const certSha256 = process.env.OUTLINE_CERT_SHA256 || ''; // recommended: certSh
 
 const qrcode = require('qrcode-terminal');
 const { UserError } = require('./lib/errors');
-const { createStore } = require('./lib/config');
+const { createStore, readToken, rotateToken, tokenPath } = require('./lib/config');
 const { createRegistry } = require('./lib/registry');
 const { formatBytes, parseBytes, rewriteAccessUrl, printTable, printCsv } = require('./lib/format');
 
@@ -36,7 +36,13 @@ Commands:
   servers add <name>          Save a server, reading its access code from stdin
   servers use <server>        Choose the server other commands act on
   servers remove <server>     Forget a saved server (the server itself is untouched)
-  ui                          Open the admin dashboard in your browser
+  ui                          Serve the admin dashboard until you stop it
+  service install             Run the dashboard in the background, from login on
+  service status              Whether it is running, and the URL to open
+  service start|stop|restart  Control the background service
+  service logs                Show what the background service has printed
+  service url                 Print the dashboard URL
+  service uninstall           Stop it and remove the service definition
 
 <key> may be either a key id or a key name.
 <server> may be either a server id or a server name.
@@ -47,7 +53,10 @@ Options:
   --csv       Output CSV instead of a table (list, usage, servers)
   --limit <size>  Data limit for a newly created key (add)
   --server <s>    Act on this server instead of the active one
-  --port <n>  Port for the dashboard (ui, default 8787)
+  --port <n>  Port for the dashboard (ui, service install; default 8787)
+  --lines <n> How many log lines to show (service logs, default 50)
+  --follow    Keep printing new log lines (service logs)
+  --rotate    Mint a new token, invalidating existing links (service url)
   -h, --help  Show this help
 
 Sizes accept a unit suffix, e.g. 10GB, 500MB, 2TB.
@@ -65,6 +74,7 @@ Configuration:
   SHADOWTOOLS_CONFIG   Override where saved servers are stored.
 
 Examples:
+  node shadowtools.js service install
   node shadowtools.js list --qr
   node shadowtools.js add Alice --limit 50GB
   node shadowtools.js limit Alice 10GB
@@ -87,6 +97,8 @@ function parseArgs(argv) {
             flags.port = argv[++i];
         } else if (arg === '--server') {
             flags.server = argv[++i];
+        } else if (arg === '--lines') {
+            flags.lines = argv[++i];
         } else if (arg.startsWith('--')) {
             flags[arg.slice(2)] = true;
         } else {
@@ -378,31 +390,55 @@ async function serversCommand(registry, args, flags) {
     await run(registry, rest, flags);
 }
 
+/** Validates a --port value, since a typo here is otherwise a confusing crash. */
+function parsePort(given, fallback = 8787) {
+    if (given === undefined) return fallback;
+    const port = Number(given);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        throw new UserError(`"${given}" is not a valid port.`);
+    }
+    return port;
+}
+
 async function uiCommand(registry, args, flags) {
     const { start } = require('./lib/server');
 
-    const port = flags.port === undefined ? 8787 : Number(flags.port);
-    if (!Number.isInteger(port) || port < 0 || port > 65535) {
-        throw new UserError(`"${flags.port}" is not a valid port.`);
-    }
+    const port = parsePort(flags.port);
 
     let started;
     try {
-        started = await start({ registry, port });
+        // The stored token, so this URL and the background service's agree and
+        // a bookmark keeps working whichever one is serving.
+        started = await start({ registry, port, token: readToken() });
     } catch (err) {
         if (err.code === 'EADDRINUSE') {
-            throw new UserError(`Port ${port} is already in use. Choose another with --port.`);
+            throw new UserError(
+                `Port ${port} is already in use. If that is the background service, ` +
+                'it is already serving the dashboard — run "shadowtools service status" ' +
+                'for its URL. Otherwise choose another port with --port.'
+            );
         }
         throw err;
     }
 
-    console.log('Dashboard running. Open this URL:');
-    console.log(`\n  ${started.url}\n`);
-    console.log('It listens on localhost only, and the token in the URL authorises it.');
-    if (!registry.list().length) {
-        console.log('No servers configured yet — add your first one from the Servers section.');
+    // Under a service manager stdout is a log file, not a terminal — and the
+    // token in that URL is the only thing standing between another local user
+    // and this dashboard. A log is the wrong place for it, so print the URL
+    // whole only when a person is looking at it.
+    if (process.stdout.isTTY) {
+        console.log('Dashboard running. Open this URL:');
+        console.log(`\n  ${started.url}\n`);
+        console.log('It listens on localhost only, and the token in the URL authorises it.');
+        if (!registry.list().length) {
+            console.log('No servers configured yet — add your first one from the Servers section.');
+        }
+        console.log('Press Ctrl+C to stop.');
+    } else {
+        console.log(
+            `[${new Date().toISOString()}] dashboard listening on 127.0.0.1:${started.port} — ` +
+            'run "shadowtools service url" for the address to open'
+        );
     }
-    console.log('Press Ctrl+C to stop.');
 
     // Resolve only when the server closes, so the CLI stays alive serving it.
     await new Promise(resolve => {
@@ -411,6 +447,157 @@ async function uiCommand(registry, args, flags) {
         process.once('SIGTERM', stop);
         started.server.once('close', resolve);
     });
+}
+
+/* ---------------------------------------------------------------------------
+ * The background service.
+ * ------------------------------------------------------------------------- */
+
+const dashboardUrl = port => `http://127.0.0.1:${port}/?t=${readToken()}`;
+
+const serviceCommands = {
+    async install(service, args, flags) {
+        const port = parsePort(flags.port, service.DEFAULT_PORT);
+        const result = service.install({ port });
+
+        console.log(`Installed ${result.kind === 'launchd' ? service.LABEL : service.UNIT} and started it.`);
+        console.log(`\nDashboard: ${dashboardUrl(port)}\n`);
+        console.log(`Definition: ${result.definition}`);
+        if (result.log) console.log(`Log:        ${result.log}`);
+        console.log('It starts at login and restarts if it exits. It listens on localhost only.');
+
+        // A service does not inherit the shell it was installed from, so a
+        // server that exists only as an environment variable would silently
+        // vanish from the dashboard. Say so now rather than let it puzzle.
+        if (result.skipped.length) {
+            console.log(
+                `\n${result.skipped.join(' and ')} ${result.skipped.length > 1 ? 'are' : 'is'} set here but ` +
+                'deliberately not written into the service definition, which is not a ' +
+                'place for credentials. The service sees only saved servers, so add ' +
+                'that one with "servers add" if you want it in the background dashboard.'
+            );
+        }
+
+        await reportReachable(service, port);
+    },
+
+    async uninstall(service) {
+        const { log } = service.paths();
+        const definition = service.uninstall();
+
+        console.log(`Stopped the service and removed ${definition}.`);
+        console.log('Your saved servers and keys are untouched.');
+        // Kept deliberately: it is the record of why the service stopped, and
+        // the one thing worth reading after an uninstall you did not intend.
+        if (log && require('fs').existsSync(log)) console.log(`Its log remains at ${log}.`);
+    },
+
+    async start(service) {
+        service.start();
+        const { port } = service.status();
+        console.log(`Started. Dashboard: ${dashboardUrl(port)}`);
+        await reportReachable(service, port);
+    },
+
+    async stop(service) {
+        service.stop();
+        console.log('Stopped.');
+    },
+
+    async restart(service) {
+        service.restart();
+        const { port } = service.status();
+        console.log(`Restarted. Dashboard: ${dashboardUrl(port)}`);
+        await reportReachable(service, port);
+    },
+
+    async status(service, args, flags) {
+        const state = service.status();
+
+        if (flags.json) {
+            console.log(JSON.stringify({ ...state, answering: await service.probe(state.port) }, null, 2));
+            return;
+        }
+
+        if (!state.installed) {
+            console.log('not installed');
+            console.log('\nRun "shadowtools service install" to run the dashboard in the background.');
+            return;
+        }
+
+        const answering = await service.probe(state.port);
+        const where = state.running ? `pid ${state.pid || '?'}` : 'not running';
+        console.log(`${state.running ? 'running' : 'stopped'}  ${where}  port ${state.port}`);
+        console.log(`Dashboard: ${dashboardUrl(state.port)}`);
+        console.log(`Definition: ${state.definition}`);
+        if (state.log) console.log(`Log:        ${state.log}`);
+
+        // The service manager only knows it launched the process. Whether the
+        // dashboard actually bound the port is a different question.
+        if (state.running && !answering) {
+            console.log(
+                `\nIt is running but nothing is answering on port ${state.port}. ` +
+                'Check "shadowtools service logs" — the port may be taken by something else.'
+            );
+        }
+    },
+
+    async logs(service, args, flags) {
+        const lines = flags.lines === undefined ? 50 : Number(flags.lines);
+        if (!Number.isInteger(lines) || lines <= 0) {
+            throw new UserError(`"${flags.lines}" is not a number of lines.`);
+        }
+
+        const text = service.logs({ lines, follow: Boolean(flags.follow) });
+        // A follower streams straight to the terminal and returns nothing.
+        if (text === null) return;
+        console.log(text || '(the service has printed nothing yet)');
+    },
+
+    async url(service, args, flags) {
+        if (flags.rotate) {
+            rotateToken();
+            console.log('Minted a new token. Every link handed out before now is dead.');
+            console.log(`Stored in ${tokenPath()}`);
+            if (service.isInstalled() && service.status().running) {
+                console.log('\nRestart the service to serve with it: shadowtools service restart');
+            }
+            console.log('');
+        }
+
+        // Useful even where no service manager is supported, or none is
+        // installed: the URL is the same one `ui` serves.
+        const installed = service.platform() && service.isInstalled();
+        console.log(dashboardUrl(installed ? service.status().port : service.DEFAULT_PORT));
+    },
+};
+
+/** Warns when the service is up but the port is not answering yet. */
+async function reportReachable(service, port) {
+    // Give it a moment: the service manager returns before the process binds.
+    for (let attempt = 0; attempt < 10; attempt++) {
+        if (await service.probe(port, 500)) return true;
+        await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    console.log(
+        `\nNothing is answering on port ${port} yet. If it does not come up, ` +
+        'check "shadowtools service logs".'
+    );
+    return false;
+}
+
+async function serviceCommand(args, flags) {
+    const service = require('./lib/service');
+    const [sub, ...rest] = args;
+
+    const run = serviceCommands[sub || 'status'];
+    if (!run) {
+        throw new UserError(
+            `Unknown service command "${sub}". Try: install, uninstall, start, stop, ` +
+            'restart, status, logs, url.'
+        );
+    }
+    await run(service, rest, flags);
 }
 
 /** Builds the registry from the environment and the saved config file. */
@@ -449,6 +636,7 @@ async function main() {
     // These two manage or serve the configuration itself, so they must work
     // before any Outline server exists — that is how the first one gets added.
     if (commandName === 'servers') return serversCommand(registry, args, flags);
+    if (commandName === 'service') return serviceCommand(args, flags);
     if (commandName === 'ui') return uiCommand(registry, args, flags);
 
     // Listing is the historical default, so bare `node shadowtools.js` still works.
