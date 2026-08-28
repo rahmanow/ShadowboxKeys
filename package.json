@@ -27,7 +27,6 @@
     "node": ">=14"
   },
   "dependencies": {
-    "node-fetch": "^2.7.0",
     "qrcode-terminal": "^0.12.0"
   }
 }

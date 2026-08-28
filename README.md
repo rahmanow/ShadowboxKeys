@@ -149,14 +149,15 @@ Every push and pull request runs the suite on Node 18, 20 and 22 via GitHub Acti
 
 Outline servers use a self-signed TLS certificate for the Management API, so the tool disables certificate verification (`rejectUnauthorized: false`) for those requests. This is normal for the Outline Management API, but it does mean the connection is not protected against man-in-the-middle attacks. Only run this against servers you control, ideally from a trusted network.
 
+This is also why the HTTP calls use the built-in `node:https` module rather than the global `fetch()`: `fetch` has no supported way to relax certificate checks for a single request — it ignores the `agent` option, and its dispatcher lives in `undici`, which would mean taking on a dependency to do what `node:https` already does.
+
 ## Troubleshooting
 
 - **`Please configure your Management API URL first`** — set `OUTLINE_API_URL`, or replace the placeholder in `shadowboxKey.js`.
 - **`Could not reach the Outline server`** — check that the Management API URL is correct and that its port (usually `16942`) is reachable from your machine.
-- **`Cannot find module 'node-fetch'`** — run `npm install` in the project directory first.
+- **`Cannot find module 'qrcode-terminal'`** — run `npm install` in the project directory first.
 - **`Management API responded with 404`** — your Outline server may be running an older release that lacks data-limit or metrics endpoints. Upgrade the server, or stick to `list`, `add`, `remove` and `rename`.
 - **Keys print with the IP instead of your domain** — make sure `OUTLINE_DOMAIN` (or the `domain` constant) is set and non-empty.
-- **`DeprecationWarning: The punycode module is deprecated`** — harmless, and emitted by the `node-fetch` dependency on newer Node versions. Silence it with `NODE_NO_WARNINGS=1`.
 
 ## License
 
