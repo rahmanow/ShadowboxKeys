@@ -2,9 +2,11 @@
 
 [![CI](https://github.com/rahmanow/ShadowboxKeys/actions/workflows/ci.yml/badge.svg)](https://github.com/rahmanow/ShadowboxKeys/actions/workflows/ci.yml)
 
-A command-line tool for managing access keys on your [Outline VPN](https://getoutline.org/) (Shadowbox) server. It lists, creates, renames and deletes keys, sets per-key data limits, reports how much data each key has used, and prints scannable QR codes so people can onboard with the Outline app instead of copy-pasting `ss://` strings.
+Manage access keys on your [Outline VPN](https://getoutline.org/) (Shadowbox) server, from the terminal or from your own code. It lists, creates, renames and deletes keys, sets per-key data limits, reports how much data each key has used, and prints scannable QR codes so people can onboard with the Outline app instead of copy-pasting `ss://` strings.
 
-It can also rewrite every access URL to use your own domain in place of the server's raw IP address — handy when you have pointed a domain at your Outline server.
+It can also rewrite every access URL to use your own domain in place of the server's raw IP address — handy when you have pointed a domain at your Outline server, or when your provider's IP has been blocked and you have restored the server elsewhere.
+
+This project supersedes [outline-br](https://github.com/rahmanow/outline-br), whose `getKeys()` module lives on here. See [migrating from outline-br](#migrating-from-outline-br).
 
 ## Prerequisites
 
@@ -131,14 +133,83 @@ Export usage for a spreadsheet:
 node shadowboxKey.js usage --csv > usage.csv
 ```
 
+## Using it from code
+
+Everything the CLI does is available as a module. `require` the package and you get three helpers plus the underlying client:
+
+```js
+const { listKeys, getUsage, getKeys, OutlineClient } = require('shadowbox-keys');
+
+const API = 'https://1.2.3.4:16942/AbCdEf123';
+const options = { domain: 'vpn.example.com', certSha256: 'E3823F9B...52F5A584' };
+
+// Structured key data
+const keys = await listKeys(API, options);
+// [{ id: '0', name: 'Alice', port: 443, dataLimitBytes: 10737418240,
+//    accessUrl: 'ss://...@vpn.example.com:443/?outline=1' }, ...]
+
+// Who is using how much
+const usage = await getUsage(API, options);
+// [{ id: '0', name: 'Alice', bytes: 3221225472, dataLimitBytes: 10737418240 }, ...]
+```
+
+`options` is optional throughout: `domain` swaps the host in each access URL, and `certSha256` pins the server's certificate exactly as the CLI does.
+
+For anything the helpers do not cover — creating, renaming and deleting keys, or setting data limits — use the client directly:
+
+```js
+const client = new OutlineClient(API, 'E3823F9B...52F5A584');
+
+const key = await client.createKey('Alice');
+await client.setKeyDataLimit(key.id, 50 * 1024 ** 3);   // 50 GB
+await client.renameKey(key.id, 'Alice B');
+await client.clearKeyDataLimit(key.id);
+await client.removeKey(key.id);
+
+await client.setServerDataLimit(100 * 1024 ** 3);       // server-wide default
+await client.clearServerDataLimit();
+```
+
+Failures caused by bad input or a bad response throw `UserError`, which is also exported, so you can tell them apart from bugs:
+
+```js
+const { UserError } = require('shadowbox-keys');
+
+try {
+    await listKeys(API, { certSha256: expected });
+} catch (err) {
+    if (err instanceof UserError) console.error(err.message);  // e.g. wrong certificate
+    else throw err;
+}
+```
+
+### Migrating from outline-br
+
+This project absorbed [outline-br](https://github.com/rahmanow/outline-br). Its `getKeys(managementApiUrl, newDomain)` is exported here with the same signature, the same `Name -> ss://...` output and the same printing behaviour, so existing code only needs its import changed:
+
+```js
+// before
+const keys = require('outline-br');
+keys('https://1.2.3.4:16942/AbCdEf123', '87.65.43.21');
+
+// after
+const { getKeys } = require('shadowbox-keys');
+await getKeys('https://1.2.3.4:16942/AbCdEf123', '87.65.43.21');
+```
+
+Two differences, both additive: `getKeys` now also returns the lines it printed, and it accepts a third `options` argument for `certSha256`. Nothing that worked before behaves differently.
+
+New code should prefer `listKeys()`, which returns structured data and leaves presentation to you, rather than printing to stdout.
+
 ## Project layout
 
 ```
+index.js           Programmatic API: listKeys, getUsage, getKeys
 shadowboxKey.js    CLI entry point: argument parsing and commands
 lib/outline.js     Outline Management API client
 lib/format.js      Byte formatting, size parsing, table/CSV output
 lib/errors.js      UserError, for messages shown without a stack trace
-test/              Unit tests, run with the built-in Node test runner
+test/              Tests, run with the built-in Node test runner
 ```
 
 ## Development
@@ -192,4 +263,4 @@ The HTTP calls use the built-in `node:https` module because the global `fetch()`
 
 ## License
 
-No license has been specified yet. Until one is added, all rights are reserved by the author.
+[MIT](LICENSE), carried over from outline-br when the two projects merged.
