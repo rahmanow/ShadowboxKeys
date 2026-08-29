@@ -30,9 +30,13 @@ jobs:
         run: npm ci
 
       # node --check only looks at its first argument, so check each file in turn.
+      #
+      # worker/ is deliberately absent: it is ES modules in .js files, which
+      # node --check parses as CommonJS on Node 18 and rejects outright. Its
+      # syntax is covered by the bundler at deploy time instead.
       - name: Check syntax
         run: |
-          for file in index.js shadowtools.js lib/*.js test/*.js tools/*/*.js worker/*.js; do
+          for file in index.js shadowtools.js lib/*.js test/*.js tools/*/*.js; do
             node --check "$file"
           done
 
