@@ -16,6 +16,16 @@ Notable changes to shadowtools. The format follows
   requiring explicit confirmation and a changed one failing outright. The
   installer is uploaded over the SSH channel rather than fetched by the server,
   which does not assume the server can reach GitHub unmolested.
+- **The dashboard can provision too** — Servers > Install on a server. The run
+  is tracked as a job the page polls, so it survives closing the dialog or
+  reloading the page, which matters when an install takes minutes on a poor
+  connection. The host-key question is put on screen mid-handshake and the
+  connection waits for the answer. The installer's access code is redacted from
+  the streamed log: the page has an endpoint for revealing that deliberately,
+  and a log is not it.
+- `SHADOWTOOLS_INSTALL_SCRIPT` points at a local copy of the Outline installer,
+  for when the machine running shadowtools cannot reach GitHub either, or when
+  you want a copy you have vetted.
 - `ssh2` as a runtime dependency, required only by `provision` and loaded
   lazily, so the rest of the CLI works if its optional native parts fail to
   build.

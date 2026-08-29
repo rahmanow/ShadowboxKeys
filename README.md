@@ -329,6 +329,11 @@ Creating 3 access keys:
 ss://...@203.0.113.9:443/?outline=1
 ```
 
+Or from the dashboard: **Servers → Install on a server**. It asks for the same
+details, shows the host key for you to confirm, and streams the installer's
+output as it runs. A run outlives the dialog, so you can close it, reload, or
+come back later and it will still be going.
+
 The server is registered as it finishes, so `list`, `usage` and the dashboard
 see it immediately. It works on any host you can SSH into — a large provider or
 a small one, it makes no difference.
@@ -340,6 +345,10 @@ a small one, it makes no difference.
 | `--api-port`, `--keys-port` | Ports for the management API and the keys |
 | `--name`, `--domain` | How the server is saved |
 | `--keys <n>` | Access keys to create once it is up (default 1) |
+
+`SHADOWTOOLS_INSTALL_SCRIPT` points at a local copy of `install_server.sh`, for
+when this machine cannot reach GitHub either, or when you want to use a copy you
+have vetted yourself.
 
 Three things it does differently from the documented one-liner, each for a
 reason that matters when the network is hostile:
@@ -466,6 +475,7 @@ lib/errors.js      UserError, for messages shown without a stack trace
 lib/server.js      Dashboard: HTTP routes and their guards
 lib/service.js     Running the dashboard as a launchd or systemd user service
 lib/provision.js   Installing Outline on a server over SSH
+lib/jobs.js        Tracking a provisioning run so the dashboard can watch it
 lib/web.js         The dashboard page, inlined so it needs no assets
 lib/qr.js          Vector QR codes for the dashboard
 worker/            A Cloudflare Worker serving the dashboard on demo data
