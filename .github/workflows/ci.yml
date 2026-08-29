@@ -32,7 +32,7 @@ jobs:
       # node --check only looks at its first argument, so check each file in turn.
       - name: Check syntax
         run: |
-          for file in index.js shadowtools.js lib/*.js test/*.js; do
+          for file in index.js shadowtools.js lib/*.js test/*.js tools/*/*.js worker/*.js; do
             node --check "$file"
           done
 

@@ -23,6 +23,14 @@ Notable changes to shadowtools. The format follows
   connection waits for the answer. The installer's access code is redacted from
   the streamed log: the page has an endpoint for revealing that deliberately,
   and a log is not it.
+- `npm run verify:install` provisions a stand-in VPS over SSH with the genuine
+  Outline installer and checks what comes back: the access code parses, the
+  server registers like a hand-pasted one, the pinned fingerprint is the
+  certificate actually served, keys can be created and removed, and a wrong
+  fingerprint is refused. That contract lives in Outline's installer rather
+  than here, so nothing else in the suite would notice if it changed. Kept out
+  of `test/` deliberately — Node's runner collects that directory, and this
+  needs Docker and several minutes.
 - `SHADOWTOOLS_INSTALL_SCRIPT` points at a local copy of the Outline installer,
   for when the machine running shadowtools cannot reach GitHub either, or when
   you want a copy you have vetted.

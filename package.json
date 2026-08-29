@@ -16,6 +16,7 @@
   "scripts": {
     "start": "node shadowtools.js",
     "test": "node --test",
+    "verify:install": "node tools/verify-real-install/verify.js",
     "prepublishOnly": "npm test"
   },
   "keywords": [

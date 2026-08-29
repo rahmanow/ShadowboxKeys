@@ -479,6 +479,7 @@ lib/jobs.js        Tracking a provisioning run so the dashboard can watch it
 lib/web.js         The dashboard page, inlined so it needs no assets
 lib/qr.js          Vector QR codes for the dashboard
 worker/            A Cloudflare Worker serving the dashboard on demo data
+tools/             An end-to-end check against a real Outline install
 test/              Tests, run with the built-in Node test runner
 ```
 
@@ -489,6 +490,18 @@ Run the test suite:
 ```bash
 npm test
 ```
+
+There is also an end-to-end check against a **real** Outline install, which is
+not part of `npm test` because it needs Docker and a few minutes:
+
+```bash
+npm run verify:install
+```
+
+It provisions a stand-in VPS over SSH with the genuine installer and verifies
+what comes back — see [`tools/verify-real-install/`](tools/verify-real-install/).
+That contract lives in Outline's installer rather than here, so nothing in the
+suite would notice if it changed.
 
 The tests cover the pure logic — size parsing and formatting, access-URL rewriting, table and CSV rendering, argument parsing and key lookup — along with the config store, the server registry, the dashboard's HTTP routes and its guards, driven over a real socket against a stand-in Outline server. They need Node 18 or newer for the built-in test runner, even though the tool itself runs on Node 14+.
 
